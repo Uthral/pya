@@ -4,9 +4,11 @@ from .astft import Astft
 from .aspec import Aspec
 from .amfcc import Amfcc
 from .arecorder import Arecorder
+from .esig import Esig
 from .ugen import Ugen
 from .version import __version__
 from .helper import *
+
 # from .helper.visualization import basicplots
 from .backend import *
 

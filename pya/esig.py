@@ -10,6 +10,7 @@ from typing import Type
 from amfm_decompy import basic_tools, pYAAPT
 import numpy as np
 import matplotlib.pyplot as plt
+import librosa
 from pya.asig import Asig
 
 
@@ -20,7 +21,8 @@ class Esig:
     To allow non-destructive editing, the unmodified audio signal is stored as an Asig object.
     """
 
-    NOTE_MAX_PITCH_DELTA = 5
+    # The maximum deviation of a pitch from the mean pitch of a note in cents (100 cents = 1 semitone)
+    NOTE_MAX_PITCH_DELTA = 80
 
     def __init__(self, asig: Asig, algorithm: str = "yaapt") -> None:
         """Creates a new editable audio signal from an existing audio signal.
@@ -78,12 +80,17 @@ class Esig:
                     start = i
             else:
                 new_avg = np.mean(pitches + [current_pitch])
+                new_avg_midi = librosa.hz_to_midi(new_avg)
+                semitone_freq_delta = (
+                    librosa.midi_to_hz(new_avg_midi + 1) - new_avg
+                )  # Hz difference between avg and one semitone higher
+                max_freq_deviation = semitone_freq_delta * (
+                    self.NOTE_MAX_PITCH_DELTA / 100
+                )  # Max deviation in Hz
+
                 # If adding the current pitch to the note would make any pitch too far away,
                 # end the current note and start a new one
-                if any(
-                    abs(pitch - new_avg) > self.NOTE_MAX_PITCH_DELTA
-                    for pitch in pitches
-                ):
+                if any(abs(pitch - new_avg) > max_freq_deviation for pitch in pitches):
                     end = i
                     ranges.append((start, end))
                     start = i
@@ -157,24 +164,3 @@ class Note:
         self.start = start
         self.end = end
         self.pitch = pitch
-
-
-if __name__ == "__main__":
-    asig_test1 = Asig("./examples/samples/legato.wav")
-    esig_test1 = Esig(asig_test1)
-
-    asig_test2 = Asig("./examples/samples/bohemian_rhapsody_piano_monotone.wav")
-    esig_test2 = Esig(asig_test2)
-
-    fig = plt.figure(figsize=(15, 5))
-    ax1 = plt.subplot(1, 2, 1)
-    esig_test1.plot_pitch()
-    ax2 = plt.subplot(1, 2, 2)
-    esig_test2.plot_pitch()
-    ax1.set_title("Legato")
-    ax2.set_title("Bohemian Rhapsody")
-    ax1.set_xlabel("Samples")
-    ax2.set_xlabel("Samples")
-    ax1.set_ylabel("Pitch (Hz)")
-    ax2.set_ylabel("Pitch (Hz)")
-    plt.show()
