@@ -126,22 +126,37 @@ class Esig:
 
         return np.mean(self.pitch[note.start : note.end])
 
-    def plot_pitch(self, include_notes: bool = True):
+    def plot_pitch(self, ax: plt.Axes = None, include_notes: bool = True):
         """Plots the guessed pitch. This won't call plt.show(), allowing plot customization.
 
         Parameters
         ----------
+        ax : matplotlib.axes.Axes, optional
+            The axes to plot on, by default None.
+            If None, a new figure will be created.
         include_notes : bool, optional
             Whether or not to include the guessed notes in the plot, by default True
         """
 
+        # Create a new axes if none is given
+        if ax is None:
+            ax = plt.subplot()
+
         # Plot the pitch
-        plt.plot(self.pitch)
+        ax.plot(self.pitch)
+
+        # Label and format the axes
+        ticks = np.arange(0, len(self.pitch), len(self.pitch) / 10)
+        time = self.asig.samples / self.asig.sr
+        time_ticks = np.round(np.arange(0, time, time / len(ticks)), 1)
+        ax.set_xticks(ticks, time_ticks)
+        ax.set_xlabel("Time (s)")
+        ax.set_ylabel("Pitch (Hz)")
 
         # Plot the notes with average pitch as line
         if include_notes:
             for note in self.notes:
-                plt.plot(
+                ax.plot(
                     [note.start, note.end],
                     [self._average_note_pitch(note), self._average_note_pitch(note)],
                     color="red",
