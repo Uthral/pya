@@ -21,10 +21,9 @@ class Esig:
     To allow non-destructive editing, the unmodified audio signal is stored as an Asig object.
     """
 
-    # The maximum deviation of a pitch from the mean pitch of a note in cents (100 cents = 1 semitone)
-    NOTE_MAX_PITCH_DELTA = 80
-
-    def __init__(self, asig: Asig, algorithm: str = "yaapt") -> None:
+    def __init__(
+        self, asig: Asig, algorithm: str = "yaapt", max_note_delta: int = 80
+    ) -> None:
         """Creates a new editable audio signal from an existing audio signal.
 
         Parameters
@@ -34,10 +33,14 @@ class Esig:
         algorithm : str
             The algorithm to be used to guess the pitch of the audio signal.
             Possible values are: 'yaapt'
+        max_note_delta : int
+            The maximum difference between the average pitch of a note to each pitch in the note,
+            in cents (100 cents = 1 semitone).
         """
 
         self.asig = asig
         self.algorithm = algorithm
+        self.max_note_delta = max_note_delta
         self.edits = []
 
         # Guess the pitch of the audio signal
@@ -85,7 +88,7 @@ class Esig:
                     librosa.midi_to_hz(new_avg_midi + 1) - new_avg
                 )  # Hz difference between avg and one semitone higher
                 max_freq_deviation = semitone_freq_delta * (
-                    self.NOTE_MAX_PITCH_DELTA / 100
+                    self.max_note_delta / 100
                 )  # Max deviation in Hz
 
                 # If adding the current pitch to the note would make any pitch too far away,
