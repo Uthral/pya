@@ -22,7 +22,7 @@ class Esig:
     """
 
     def __init__(
-        self, asig: Asig, algorithm: str = "yaapt", max_note_delta: int = 80
+        self, asig: Asig, algorithm: str = "yaapt", max_vibrato_extent: int = 40
     ) -> None:
         """Creates a new editable audio signal from an existing audio signal.
 
@@ -33,14 +33,15 @@ class Esig:
         algorithm : str
             The algorithm to be used to guess the pitch of the audio signal.
             Possible values are: 'yaapt'
-        max_note_delta : int
+        max_vibrato_extent : int
             The maximum difference between the average pitch of a note to each pitch in the note,
             in cents (100 cents = 1 semitone).
+            Voice vibrato is usually below 100 cents.
         """
 
         self.asig = asig
         self.algorithm = algorithm
-        self.max_note_delta = max_note_delta
+        self.max_vibrato_extent = max_vibrato_extent
         self.edits = []
 
         # Guess the pitch of the audio signal
@@ -88,7 +89,7 @@ class Esig:
                     librosa.midi_to_hz(new_avg_midi + 1) - new_avg
                 )  # Hz difference between avg and one semitone higher
                 max_freq_deviation = semitone_freq_delta * (
-                    self.max_note_delta / 100
+                    self.max_vibrato_extent / 100
                 )  # Max deviation in Hz
 
                 # If adding the current pitch to the note would make any pitch too far away,
@@ -126,12 +127,12 @@ class Esig:
 
         return np.mean(self.pitch[note.start : note.end])
 
-    def plot_pitch(self, ax: plt.Axes = None, include_notes: bool = True):
+    def plot_pitch(self, axes: plt.Axes = None, include_notes: bool = True):
         """Plots the guessed pitch. This won't call plt.show(), allowing plot customization.
 
         Parameters
         ----------
-        ax : matplotlib.axes.Axes, optional
+        axes : matplotlib.axes.Axes, optional
             The axes to plot on, by default None.
             If None, a new figure will be created.
         include_notes : bool, optional
@@ -139,24 +140,24 @@ class Esig:
         """
 
         # Create a new axes if none is given
-        if ax is None:
-            ax = plt.subplot()
+        if axes is None:
+            axes = plt.subplot()
 
         # Plot the pitch
-        ax.plot(self.pitch)
+        axes.plot(self.pitch)
 
         # Label and format the axes
         ticks = np.arange(0, len(self.pitch), len(self.pitch) / 10)
         time = self.asig.samples / self.asig.sr
         time_ticks = np.round(np.arange(0, time, time / len(ticks)), 1)
-        ax.set_xticks(ticks, time_ticks)
-        ax.set_xlabel("Time (s)")
-        ax.set_ylabel("Pitch (Hz)")
+        axes.set_xticks(ticks, time_ticks)
+        axes.set_xlabel("Time (s)")
+        axes.set_ylabel("Pitch (Hz)")
 
         # Plot the notes with average pitch as line
         if include_notes:
             for note in self.notes:
-                ax.plot(
+                axes.plot(
                     [note.start, note.end],
                     [self._average_note_pitch(note), self._average_note_pitch(note)],
                     color="red",
