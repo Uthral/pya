@@ -11,8 +11,8 @@ from amfm_decompy import basic_tools, pYAAPT
 import numpy as np
 import matplotlib.pyplot as plt
 import librosa
-from pya.asig import Asig
 import scipy.signal
+from pya.asig import Asig
 
 
 class Esig:
