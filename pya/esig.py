@@ -11,7 +11,7 @@ from amfm_decompy import basic_tools, pYAAPT
 import numpy as np
 import matplotlib.pyplot as plt
 import librosa
-import scipy.signal
+import scipy.ndimage
 from pya.asig import Asig
 
 
@@ -27,7 +27,6 @@ class Esig:
         asig: Asig,
         algorithm: str = "yaapt",
         max_vibrato_extent: float = 40,
-        max_vibrato_rate: float | None = 10.0,
         min_note_length: float = 0.1,
     ) -> None:
         """Creates a new editable audio signal from an existing audio signal.
@@ -43,10 +42,6 @@ class Esig:
             The maximum difference between the average pitch of a note to each pitch in the note,
             in cents (100 cents = 1 semitone).
             Voice vibrato is usually below 100 cents.
-        max_vibrato_rate : float | None
-            The maximum vibrato rate in Hz.
-            Voice vibrato is usually between 5 and 8 Hz.
-            Set to None to disable vibrato rate filtering.
         min_note_length : float
             The minimum length of a note in seconds.
             Notes shorter than this will be filtered out.
@@ -55,7 +50,6 @@ class Esig:
         self.asig = asig
         self.algorithm = algorithm
         self.max_vibrato_extent = max_vibrato_extent
-        self.max_vibrato_rate = max_vibrato_rate
         self.min_note_length = min_note_length
         self.edits = []
 
@@ -90,25 +84,26 @@ class Esig:
         # We first define a note as a range of samples,
         # where the pitch is not too far away from the mean pitch of the range.
         ranges = []
-        pitches = None
-        start = 0
-        end = 0
+        start = 0  # Inclusive
+        end = 0  # Exclusive
         for i, current_pitch in enumerate(self.pitch):
-            # If the pitch is 0, end the current note if there is one
+            # Extend note by one sample.
+            end = i
+
+            end_note = False
+
+            # If the pitch is 0, end the current note.
             if current_pitch == 0:
-                if pitches is not None:
-                    end = i
-                    ranges.append((start, end))
-                    pitches = None
-
-                continue
-
-            # If we have no pitches, start a new note
-            if pitches is None:
-                pitches = [current_pitch]
-                start = i
+                end_note = True
             else:
-                new_avg = np.mean(pitches + [current_pitch])
+                # Get the pitches in the current note.
+                pitches = self.pitch[start:end]
+                new_pitches = np.append(pitches, current_pitch)
+                new_pitches_gaussian = scipy.ndimage.gaussian_filter1d(new_pitches, 5)
+
+                # Calculate what the average pitch would be
+                # if we added the current sample to the note.
+                new_avg = np.mean(new_pitches)
                 new_avg_midi = librosa.hz_to_midi(new_avg)
                 semitone_freq_delta = (
                     librosa.midi_to_hz(new_avg_midi + 1) - new_avg
@@ -117,47 +112,31 @@ class Esig:
                     self.max_vibrato_extent / 100
                 )  # Max deviation in Hz
 
-                end_note = False
-
-                # If adding the current pitch to the note would make any pitch difference
-                # to the mean above the max deviation, end the current note and start a new one.
+                # If adding the current sample to the note would cause the pitch difference
+                # between the average pitch and any pitch in the note to be above the max,
+                # end the current note and start a new one.
                 if any(abs(pitch - new_avg) > max_freq_deviation for pitch in pitches):
                     end_note = True
+                # We compare the maximum difference within the gaussian filtered pitches
+                elif (
+                    new_pitches_gaussian.max() - new_pitches_gaussian.min()
+                    > max_freq_deviation
+                ):
+                    end_note = True
+                # If we have reached the end of the signal, end the current note
+                elif i == len(self.pitch) - 1:
+                    end_note = True
 
-                # If the vibrato rate of the current note is above the max, end the current note
-                # and start a new one, e.g. consider it as a seperate note instead of a vibrato.
-                if self.max_vibrato_rate is not None:
-                    peaks = scipy.signal.find_peaks(self.pitch, prominence=0.1)[0]
-                    peaks_in_note = [
-                        peak for peak in peaks if peak >= start and peak <= i
-                    ]  # Peaks in the current note
-                    if len(peaks_in_note) > 1:
-                        vibrato_rate_period = np.mean(
-                            np.diff(peaks_in_note)
-                        )  # Avg period between peaks (in samples)
-                        vibrato_rate = 1 / (
-                            vibrato_rate_period / self.pitch_sr
-                        )  # Frequency of peaks
-                        if vibrato_rate > self.max_vibrato_rate:
-                            end_note = True
-
-                if end_note:
-                    end = i
+            if end_note:
+                # If the note is long enough, add it to the list of notes before ending it
+                if end - start > self.min_note_length * self.pitch_sr:
                     ranges.append((start, end))
-                    pitches = [current_pitch]
-                    start = i
-                # If the pitch is close enough, add it to the current note
-                else:
-                    pitches.append(current_pitch)
-                    end = i
+
+                start = i
 
         # Create the notes
         notes = []
         for start, end in ranges:
-            # Filter out notes that are too short
-            if end - start < self.min_note_length * self.pitch_sr:
-                continue
-
             pitch = np.mean(self.pitch[start:end])
             notes.append(Note(start, end, pitch))
 
@@ -216,9 +195,10 @@ class Esig:
         # Plot the notes with average pitch as line
         if include_notes:
             for note in self.notes:
+                avg_pitch = self._average_note_pitch(note)
                 axes.plot(
                     [note.start / self.pitch_sr, (note.end - 1) / self.pitch_sr],
-                    [self._average_note_pitch(note), self._average_note_pitch(note)],
+                    [avg_pitch, avg_pitch],
                     color="red",
                 )
 
