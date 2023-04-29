@@ -99,7 +99,7 @@ class Esig:
                 # Get the pitches in the current note.
                 pitches = self.pitch[start:end]
                 new_pitches = np.append(pitches, current_pitch)
-                new_pitches_gaussian = scipy.ndimage.gaussian_filter1d(new_pitches, 5)
+                new_pitches_gaussian = scipy.ndimage.gaussian_filter1d(new_pitches, 6)
 
                 # Calculate what the average pitch would be
                 # if we added the current sample to the note.
@@ -115,7 +115,9 @@ class Esig:
                 # If adding the current sample to the note would cause the pitch difference
                 # between the average pitch and any pitch in the note to be above the max,
                 # end the current note and start a new one.
-                if any(abs(pitch - new_avg) > max_freq_deviation for pitch in pitches):
+                if any(
+                    abs(pitch - new_avg) > max_freq_deviation for pitch in new_pitches
+                ):
                     end_note = True
                 # We compare the maximum difference within the gaussian filtered pitches
                 elif (
