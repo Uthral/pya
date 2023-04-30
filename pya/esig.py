@@ -27,6 +27,7 @@ class Esig:
         asig: Asig,
         algorithm: str = "yaapt",
         max_vibrato_extent: float = 40,
+        max_vibrato_inaccuracy: float = 0.5,
         min_note_length: float = 0.1,
     ) -> None:
         """Creates a new editable audio signal from an existing audio signal.
@@ -42,6 +43,11 @@ class Esig:
             The maximum difference between the average pitch of a note to each pitch in the note,
             in cents (100 cents = 1 semitone).
             Voice vibrato is usually below 100 cents.
+        max_vibrato_inaccuracy : float
+            A factor (between 0 and 1) that determines how accurate
+            the pitch of a note has to be within the note, when the signal has vibrato.
+            A value near 0 means that the pitch has to be very accurate,
+            e.g. the vibrato has to be very even.
         min_note_length : float
             The minimum length of a note in seconds.
             Notes shorter than this will be filtered out.
@@ -50,6 +56,7 @@ class Esig:
         self.asig = asig
         self.algorithm = algorithm
         self.max_vibrato_extent = max_vibrato_extent
+        self.max_vibrato_inaccuracy = max_vibrato_inaccuracy
         self.min_note_length = min_note_length
         self.edits = []
 
@@ -123,9 +130,11 @@ class Esig:
                     abs(pitch - new_avg) > max_freq_deviation for pitch in new_pitches
                 ):
                     end_note = True
-                # We end the note if the average pitch is too far away from the gaussian-smoothed pitch.
+                # We end the note if the average pitch is too far away
+                # from the gaussian-smoothed pitch.
                 elif any(
-                    abs(pitch_gaussian - new_avg) > max_freq_deviation * 0.3
+                    abs(pitch_gaussian - new_avg)
+                    > max_freq_deviation * self.max_vibrato_inaccuracy
                     for pitch_gaussian in new_pitches_gaussian
                 ):
                     end_note = True
