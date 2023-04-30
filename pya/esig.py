@@ -38,7 +38,7 @@ class Esig:
         algorithm : str
             The algorithm to be used to guess the pitch of the audio signal.
             Possible values are: 'yaapt'
-        max_vibrato_extent : float | None
+        max_vibrato_extent : float
             The maximum difference between the average pitch of a note to each pitch in the note,
             in cents (100 cents = 1 semitone).
             Voice vibrato is usually below 100 cents.
@@ -99,7 +99,11 @@ class Esig:
                 # Get the pitches in the current note.
                 pitches = self.pitch[start:end]
                 new_pitches = np.append(pitches, current_pitch)
-                new_pitches_gaussian = scipy.ndimage.gaussian_filter1d(new_pitches, 6)
+                average_vibrato_rate = 5  # Hz
+                sigma = self.pitch_sr / (average_vibrato_rate * 2)
+                new_pitches_gaussian = scipy.ndimage.gaussian_filter1d(
+                    new_pitches, sigma
+                )
 
                 # Calculate what the average pitch would be
                 # if we added the current sample to the note.
@@ -119,10 +123,10 @@ class Esig:
                     abs(pitch - new_avg) > max_freq_deviation for pitch in new_pitches
                 ):
                     end_note = True
-                # We compare the maximum difference within the gaussian filtered pitches
-                elif (
-                    new_pitches_gaussian.max() - new_pitches_gaussian.min()
-                    > max_freq_deviation
+                # We end the note if the average pitch is too far away from the gaussian-smoothed pitch.
+                elif any(
+                    abs(pitch_gaussian - new_avg) > max_freq_deviation * 0.3
+                    for pitch_gaussian in new_pitches_gaussian
                 ):
                     end_note = True
                 # If we have reached the end of the signal, end the current note
@@ -203,6 +207,9 @@ class Esig:
                     [avg_pitch, avg_pitch],
                     color="red",
                 )
+
+            # Add legend
+            axes.legend(["Detected pitch", "Average pitch of note"])
 
 
 class Note:
