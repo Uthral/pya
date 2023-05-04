@@ -28,7 +28,7 @@ class Esig:
         algorithm: str = "yaapt",
         max_vibrato_extent: float = 40,
         max_vibrato_inaccuracy: float = 0.5,
-        min_note_length: float = 0.1,
+        min_event_length: float = 0.1,
     ) -> None:
         """Creates a new editable audio signal from an existing audio signal.
 
@@ -40,24 +40,24 @@ class Esig:
             The algorithm to be used to guess the pitch of the audio signal.
             Possible values are: 'yaapt'
         max_vibrato_extent : float
-            The maximum difference between the average pitch of a note to each pitch in the note,
+            The maximum difference between the average pitch of a event to each pitch in the event,
             in cents (100 cents = 1 semitone).
             Voice vibrato is usually below 100 cents.
         max_vibrato_inaccuracy : float
             A factor (between 0 and 1) that determines how accurate
-            the pitch of a note has to be within the note, when the signal has vibrato.
+            the pitch of a event has to be within the event, when the signal has vibrato.
             A value near 0 means that the pitch has to be very accurate,
             e.g. the vibrato has to be very even.
-        min_note_length : float
-            The minimum length of a note in seconds.
-            Notes shorter than this will be filtered out.
+        min_event_length : float
+            The minimum length of a event in seconds.
+            Events shorter than this will be filtered out.
         """
 
         self.asig = asig
         self.algorithm = algorithm
         self.max_vibrato_extent = max_vibrato_extent
         self.max_vibrato_inaccuracy = max_vibrato_inaccuracy
-        self.min_note_length = min_note_length
+        self.min_event_length = min_event_length
         self.edits = []
 
         # Guess the pitch of the audio signal
@@ -75,35 +75,35 @@ class Esig:
         else:
             raise ValueError("Invalid algorithm")
 
-        # Guess the notes from the pitch
-        self.notes = self._guess_notes()
+        # Guess the events from the pitch
+        self.events = self._guess_events()
 
-    def _guess_notes(self) -> list:
-        """Guesses the notes from the pitch.
+    def _guess_events(self) -> list:
+        """Guesses the events from the pitch.
 
         Returns
         -------
         list
-            The guessed notes.
-            This list can be incomplete, e.g. parts of the audio signal have no note assigned.
+            The guessed events.
+            This list can be incomplete, e.g. parts of the audio signal have no event assigned.
         """
 
-        # We first define a note as a range of samples,
+        # We first define a event as a range of samples,
         # where the pitch is not too far away from the mean pitch of the range.
         ranges = []
         start = 0  # Inclusive
         end = 0  # Exclusive
         for i, current_pitch in enumerate(self.pitch):
-            # Extend note by one sample.
+            # Extend event by one sample.
             end = i
 
-            end_note = False
+            end_event = False
 
-            # If the pitch is 0, end the current note.
+            # If the pitch is 0, end the current event.
             if current_pitch == 0:
-                end_note = True
+                end_event = True
             else:
-                # Get the pitches in the current note.
+                # Get the pitches in the current event.
                 pitches = self.pitch[start:end]
                 new_pitches = np.append(pitches, current_pitch)
                 average_vibrato_rate = 5  # Hz
@@ -113,7 +113,7 @@ class Esig:
                 )
 
                 # Calculate what the average pitch would be
-                # if we added the current sample to the note.
+                # if we added the current sample to the event.
                 new_avg = np.mean(new_pitches)
                 new_avg_midi = librosa.hz_to_midi(new_avg)
                 semitone_freq_delta = (
@@ -123,47 +123,46 @@ class Esig:
                     self.max_vibrato_extent / 100
                 )  # Max deviation in Hz
 
-                # If adding the current sample to the note would cause the pitch difference
-                # between the average pitch and any pitch in the note to be above the max,
-                # end the current note and start a new one.
+                # If adding the current sample to the event would cause the pitch difference
+                # between the average pitch and any pitch in the event to be above the max,
+                # end the current event and start a new one.
                 if any(
                     abs(pitch - new_avg) > max_freq_deviation for pitch in new_pitches
                 ):
-                    end_note = True
-                # We end the note if the average pitch is too far away
+                    end_event = True
+                # We end the event if the average pitch is too far away
                 # from the gaussian-smoothed pitch.
                 elif any(
                     abs(pitch_gaussian - new_avg)
                     > max_freq_deviation * self.max_vibrato_inaccuracy
                     for pitch_gaussian in new_pitches_gaussian
                 ):
-                    end_note = True
-                # If we have reached the end of the signal, end the current note
+                    end_event = True
+                # If we have reached the end of the signal, end the current event
                 elif i == len(self.pitch) - 1:
-                    end_note = True
+                    end_event = True
 
-            if end_note:
-                # If the note is long enough, add it to the list of notes before ending it
-                if end - start > self.min_note_length * self.pitch_sr:
+            if end_event:
+                # If the event is long enough, add it to the list of events before ending it
+                if end - start > self.min_event_length * self.pitch_sr:
                     ranges.append((start, end))
 
                 start = i
 
-        # Create the notes
-        notes = []
+        # Create the events
+        events = []
         for start, end in ranges:
-            pitch = np.mean(self.pitch[start:end])
-            notes.append(Note(start, end, pitch))
+            events.append(Event(start, end))
 
-        return notes
+        return events
 
-    def _average_note_pitch(self, note: Type["Note"]) -> float:
-        """Calculates the average pitch of a note.
+    def _average_event_pitch(self, event: Type["Event"]) -> float:
+        """Calculates the average pitch of a event.
 
         Parameters
         ----------
-        note : Type[&quot;Note&quot;]
-            The note to calculate the average pitch of.
+        event : Type[&quot;Event&quot;]
+            The event to calculate the average pitch of.
 
         Returns
         -------
@@ -171,12 +170,12 @@ class Esig:
             The average pitch in Hz.
         """
 
-        return np.mean(self.pitch[note.start : note.end])
+        return np.mean(self.pitch[event.start : event.end])
 
     def plot_pitch(
         self,
         axes: plt.Axes = None,
-        include_notes: bool = True,
+        include_events: bool = True,
         xlabel: str = "Time (s)",
         **kwargs
     ):
@@ -187,8 +186,8 @@ class Esig:
         axes : matplotlib.axes.Axes, optional
             The axes to plot on, by default None.
             If None, a new figure will be created.
-        include_notes : bool, optional
-            Whether or not to include the guessed notes in the plot, by default True
+        include_events : bool, optional
+            Whether or not to include the guessed events in the plot, by default True
         xlabel : str, optional
             The label of the x-axis, by default &quot;Time (s)&quot;
         **kwargs
@@ -207,36 +206,33 @@ class Esig:
         axes.set_xlabel(xlabel)
         axes.set_ylabel("Pitch (Hz)")
 
-        # Plot the notes with average pitch as line
-        if include_notes:
-            for note in self.notes:
-                avg_pitch = self._average_note_pitch(note)
+        # Plot the events with average pitch as line
+        if include_events:
+            for event in self.events:
+                avg_pitch = self._average_event_pitch(event)
                 axes.plot(
-                    [note.start / self.pitch_sr, (note.end - 1) / self.pitch_sr],
+                    [event.start / self.pitch_sr, (event.end - 1) / self.pitch_sr],
                     [avg_pitch, avg_pitch],
                     color="red",
                 )
 
             # Add legend
-            axes.legend(["Detected pitch", "Average pitch of note"])
+            axes.legend(["Detected pitch", "Average pitch of event"])
 
 
-class Note:
-    """A note is a range of samples with a guessed pitch."""
+class Event:
+    """A event is a range of samples with a guessed pitch."""
 
-    def __init__(self, start: int, end: int, pitch: float) -> None:
-        """Creates a note object, from start to end, with pitch as the guessed pitch.
+    def __init__(self, start: int, end: int) -> None:
+        """Creates a event object, from start to end, with pitch as the guessed pitch.
 
         Parameters
         ----------
         start : int
-            The starting point of this note (inclusive), in samples.
+            The starting point of this event (inclusive), in samples.
         end : int
-            The ending point of this note (exclusive), in samples.
-        pitch : float
-            The guessed pitch of this note, in Hz.
+            The ending point of this event (exclusive), in samples.
         """
 
         self.start = start
         self.end = end
-        self.pitch = pitch
