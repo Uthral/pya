@@ -7,11 +7,13 @@ meaning that the original audio signal is not modified and changes can be undone
 
 
 from typing import Type
+from abc import ABC, abstractmethod
 from amfm_decompy import basic_tools, pYAAPT
 import numpy as np
 import matplotlib.pyplot as plt
 import librosa
 import scipy.ndimage
+import pytsmod as tsm
 from pya.asig import Asig
 
 
@@ -172,6 +174,35 @@ class Esig:
 
         return np.mean(self.pitch[event.start : event.end])
 
+    def change_pitch(
+        self,
+        start: int,
+        end: int,
+        shift_factor: float,
+        algorithm: str = "tdpsola",
+    ):
+        """Changes the pitch of the given sample range by the given amount.
+
+        Parameters
+        ----------
+        start : int
+            The starting sample to change (inclusive)
+        end : int
+            The ending sample to change (exclusive)
+        shift_factor : float
+            The factor to change the pitch with.
+            1.0 means no change.
+        algorithm : str, optional
+            The algorithm to change the pitch with, by default "tdpsola".
+            Currently, only "tdpsola" is supported.
+        """
+
+        self.edits.append(PitchChange(start, end, shift_factor, algorithm))
+
+        # TODO only for testing
+        PitchChange(start, end, shift_factor, algorithm).apply(self)
+        self.plot_pitch()
+
     def plot_pitch(
         self,
         axes: plt.Axes = None,
@@ -236,3 +267,83 @@ class Event:
 
         self.start = start
         self.end = end
+
+
+class Edit(ABC):
+    """A non-destructive edit to an esig object."""
+
+    @abstractmethod
+    def __init__(self, start: int, end: int) -> None:
+        """Creates a non-destructive edit object for the given sample range.
+
+        Parameters
+        ----------
+        start : int
+            The starting point of this edit (inclusive), in samples.
+        end : int
+            The ending point of this edit (exclusive), in samples.
+        """
+
+        self.start = start
+        self.end = end
+
+    @abstractmethod
+    def apply(self, esig: Type["Esig"]) -> None:
+        """Applies the edit to the given esig object.
+
+        Parameters
+        ----------
+        esig : Type[&quot;Esig&quot;]
+            The esig object to apply the edit to.
+        """
+
+
+class PitchChange(Edit):
+    """Changes the pitch of a sample range."""
+
+    def __init__(
+        self, start: int, end: int, shift_factor: float, algorithm: str
+    ) -> None:
+        """Creates a non-destructive pitch change for the given sample range.
+
+        Parameters
+        ----------
+        start : int
+            The starting point of this edit (inclusive), in samples.
+        end : int
+            The ending point of this edit (exclusive), in samples.
+        shift_factor : float
+            The factor to shift the pitch by. 1.0 is no change.
+        algorithm : str
+            The algorithm to change the pitch with.
+        """
+
+        super().__init__(start, end)
+        self.shift_factor = shift_factor
+
+        if algorithm not in ["tdpsola"]:
+            raise ValueError("Invalid algorithm")
+
+        self.algorithm = algorithm
+
+    def apply(self, esig: Type["Esig"]) -> None:
+        """Applies the pitch change to the given esig object.
+
+        Parameters
+        ----------
+        esig : Type[&quot;Esig&quot;]
+            The esig object to apply the pitch change to.
+        """
+
+        if self.algorithm == "tdpsola":
+            esig.asig.sig = tsm.tdpsola(
+                esig.asig.sig,
+                esig.asig.sr,
+                esig.pitch,
+                None,
+                1,
+                self.shift_factor,
+                "hann",  # TODO
+            )
+        else:
+            raise ValueError("Invalid algorithm")
