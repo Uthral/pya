@@ -64,21 +64,27 @@ class Esig:
 
         self.cache = Cache(self)  # Initialize the cache, storing the results of edits
 
+    def undo_last(self) -> None:
+        """Undos the last edit on this signal."""
+
+        self.edits.pop()
+        self.cache.reapply()  # We need to reapply all edits in the cache
+
     def change_pitch(
         self,
-        start: int,
-        end: int,
+        start: float,
+        end: float,
         shift_factor: float,
         algorithm: str = "tdpsola",
-    ):
+    ) -> None:
         """Changes the pitch of the given sample range by the given amount.
 
         Parameters
         ----------
-        start : int
-            The starting sample to change (inclusive)
-        end : int
-            The ending sample to change (exclusive)
+        start : float
+            The starting second to change (inclusive)
+        end : float
+            The ending second to change (exclusive)
         shift_factor : float
             The factor to change the pitch with.
             1.0 means no change.
@@ -87,8 +93,38 @@ class Esig:
             Currently, only "tdpsola" is supported.
         """
 
+        # Convert seconds to samples
+        start = int(start * self.asig.sr)
+        end = int(end * self.asig.sr)
+
         self.edits.append(PitchChange(start, end, shift_factor, algorithm))
-        self.cache.apply(self.edits[-1])
+        self.cache.apply(self.edits[-1])  # Apply the edit to the cache
+
+    def change_length(
+        self, start: float, end: float, stretch_factor: float, algorithm: str = "wsola"
+    ) -> None:
+        """Changes the length of the given sample range by the given amount.
+
+        Parameters
+        ----------
+        start : float
+            The starting second to change (inclusive)
+        end : float
+            The ending second to change (exclusive)
+        stretch_factor : float
+            The factor to change the length with.
+            1.0 means no change.
+        algorithm : str, optional
+            The algorithm to change the length with, by default "wsola".
+            Currently, only "wsola" is supported.
+        """
+
+        # Convert seconds to samples
+        start = int(start * self.asig.sr)
+        end = int(end * self.asig.sr)
+
+        self.edits.append(LengthChange(start, end, stretch_factor, algorithm))
+        self.cache.apply(self.edits[-1])  # Apply the edit to the cache
 
     def plot_pitch(
         self,
@@ -96,7 +132,7 @@ class Esig:
         include_events: bool = True,
         xlabel: str = "Time (s)",
         **kwargs
-    ):
+    ) -> None:
         """Plots the guessed pitch. This won't call plt.show(), allowing plot customization.
 
         Parameters
@@ -132,11 +168,17 @@ class Esig:
         # Plot the events with average pitch as line
         if include_events:
             for event in self.cache.events:
-                avg_pitch = np.mean(self.cache.pitch[event.start : event.end])
+                # Convert signal samples to pitch samples and seconds
+                start = event.start / self.asig.sr
+                end = event.end / self.asig.sr
+                start_sample = int(start * self.cache.pitch_sr)
+                end_sample = int(end * self.cache.pitch_sr)
+
+                avg_pitch = np.mean(self.cache.pitch[start_sample:end_sample])
                 axes.plot(
                     [
-                        event.start / self.cache.pitch_sr,
-                        (event.end - 1) / self.cache.pitch_sr,
+                        start,
+                        end,
                     ],
                     [avg_pitch, avg_pitch],
                     color="red",
@@ -184,10 +226,14 @@ class Cache:
             pitch,
             pitch_sr,
             events,
+            frame_size,
+            frame_jump,
         ) = self._recalculate()  # Calculate the pitch and events
         self.pitch = pitch  # The current version of the pitch
         self.pitch_sr = pitch_sr  # The sample rate of the pitch
         self.events = events  # The current version of the events
+        self.frame_size = frame_size  # The current frame size
+        self.frame_jump = frame_jump  # The current frame jump
 
     def apply(self, edit: Type["Edit"]) -> None:
         """Applies the given edit to the cache.
@@ -205,21 +251,24 @@ class Cache:
                 pitch,
                 pitch_sr,
                 events,
+                frame_size,
+                frame_jump,
             ) = self._recalculate()
             self.pitch = pitch
             self.pitch_sr = pitch_sr
             self.events = events
+            self.frame_size = frame_size
+            self.frame_jump = frame_jump
 
-        edit.apply(self.asig, self.pitch)
+        edit.apply(self)
 
     def reapply(self) -> None:
         """Applies all edits of the esig object to the cache.
         This applies all edits on top of the original asig and pitch.
         """
 
-        # Copy the original asig and pitch
-        self.asig = Asig(np.copy(self.asig.sig), self.asig.sr)
-        self.pitch = np.copy(self.pitch)
+        # Copy the original asig from esig
+        self.asig = Asig(np.copy(self.esig.asig.sig), self.esig.asig.sr)
 
         # Apply all edits
         for edit in self.esig.edits:
@@ -232,17 +281,32 @@ class Cache:
             pitch,
             pitch_sr,
             events,
+            frame_size,
+            frame_jump,
         ) = self._recalculate()
         self.pitch = pitch
         self.pitch_sr = pitch_sr
         self.events = events
+        self.frame_size = frame_size
+        self.frame_jump = frame_jump
 
-    def _recalculate(self) -> tuple[np.ndarray, float, list]:
-        """Recalculates the pitch and events of the current signal in the cache."""
+    def _recalculate(self) -> tuple[np.ndarray, float, list, int, int]:
+        """Recalculate the pitch and events of the current signal in the cache.
+
+        Returns
+        -------
+        tuple[np.ndarray, float, list, int, int]
+            The pitch, pitch sample rate, events, frame size, and frame jump.
+
+        Raises
+        ------
+        ValueError
+            If the algorithm is invalid.
+        """
 
         # Guess the pitch of the audio signal
         if self.esig.algorithm == "yaapt":
-            pitch = self._guess_pitch_yaapt(self.asig)
+            pitch, frame_size, frame_jump = self._guess_pitch_yaapt(self.asig)
             length = (
                 len(self.asig.sig) / self.asig.sr
             )  # Length of the audio signal (in seconds)
@@ -251,11 +315,12 @@ class Cache:
             raise ValueError("Invalid algorithm")
 
         # Guess the events from the pitch
+        # TODO Use events detected from original pitch
         events = self._guess_events(pitch, pitch_sr)
 
-        return pitch, pitch_sr, events
+        return pitch, pitch_sr, events, frame_size, frame_jump
 
-    def _guess_pitch_yaapt(self, asig: Type["Asig"]) -> np.ndarray:
+    def _guess_pitch_yaapt(self, asig: Type["Asig"]) -> tuple[np.ndarray, int, int]:
         """Guesses the pitch of an audio signal.
 
         Parameters
@@ -265,8 +330,8 @@ class Cache:
 
         Returns
         -------
-        np.ndarray
-            An array of the guessed pitch.
+        tuple[np.ndarray, int, int]
+            The pitch, frame size, and frame jump of the pitch.
         """
 
         # Create a SignalObj
@@ -277,7 +342,7 @@ class Cache:
             signal, frame_length=30, tda_frame_length=40, f0_min=60, f0_max=600
         )
 
-        return pitch_guess.samp_values
+        return pitch_guess.samp_values, pitch_guess.frame_size, pitch_guess.frame_jump
 
     def _guess_events(self, pitch: np.ndarray, pitch_sr: float) -> list:
         """Guesses the events from the pitch.
@@ -360,6 +425,10 @@ class Cache:
         # Create the events
         events = []
         for start, end in ranges:
+            # Convert events to sample ranges
+            start = int(start * (self.asig.sr / pitch_sr))
+            end = int(end * (self.asig.sr / pitch_sr))
+
             events.append(Event(start, end))
 
         return events
@@ -387,15 +456,13 @@ class Edit(ABC):
         self.needs_pitch = needs_pitch
 
     @abstractmethod
-    def apply(self, asig: Type["Asig"], pitch: np.ndarray) -> None:
-        """Applies the edit to the given esig object.
+    def apply(self, cache: Type["Cache"]) -> None:
+        """Applies the edit to the given cache.
 
         Parameters
         ----------
-        asig : Type[&quot;Asig&quot;]
-            The asig object to apply the edit to.
-        pitch : np.ndarray
-            The pitch array to apply the edit to.
+        cache : Type[&quot;Cache&quot;]
+            The cache to apply the edit to.
         """
 
 
@@ -431,29 +498,92 @@ class PitchChange(Edit):
 
         self.algorithm = algorithm
 
-    def apply(self, asig: Type["Asig"], pitch: np.ndarray) -> None:
+    def apply(self, cache: Type["Cache"]) -> None:
         """Applies the edit to the given esig object.
 
         Parameters
         ----------
-        asig : Type[&quot;Asig&quot;]
-            The asig object to apply the edit to.
-        pitch : np.ndarray
-            The pitch array to apply the edit to.
+        cache : Type[&quot;Cache&quot;]
+            The cache to apply the edit to.
         """
 
         if self.algorithm == "tdpsola":
+            # The range is in signal samples, we need to convert it to pitch samples
+            factor = len(cache.pitch) / len(cache.asig.sig)
+            start = int(self.start * factor)
+            end = int(self.end * factor)
+
             # Calculate the new pitch contour,
             # i.e. the pitch contour shifted by the shift factor for the given range
-            changed_pitch = np.copy(pitch)
-            changed_pitch[self.start : self.end] *= self.shift_factor
+            changed_pitch = np.copy(cache.pitch)
+            changed_pitch[start:end] *= self.shift_factor
 
             # Apply the pitch change
-            asig.sig = tsm.tdpsola(
-                asig.sig,
-                asig.sr,
-                pitch,
+            cache.asig.sig = tsm.tdpsola(
+                cache.asig.sig.T,
+                cache.asig.sr,
+                src_f0=cache.pitch,
                 tgt_f0=changed_pitch,
-            ).T
+                p_hop_size=cache.frame_jump,
+                p_win_size=cache.frame_size,
+            ).T  # Tdpsola returns (channels, samples) instead of (samples, channels)
+        else:
+            raise ValueError("Invalid algorithm")
+
+
+class LengthChange(Edit):
+    """Changes the length of a sample range."""
+
+    def __init__(
+        self,
+        start: int,
+        end: int,
+        stretch_factor: float,
+        algorithm: str,
+    ) -> None:
+        """Creates a non-destructive length change for the given sample range.
+
+        Parameters
+        ----------
+        start : int
+            The starting point of this edit (inclusive), in samples.
+        end : int
+            The ending point of this edit (exclusive), in samples.
+        stretch_factor : float
+            The factor to stretch the length by. 1.0 is no change.
+        algorithm : str
+            The algorithm to change the length with.
+        """
+
+        super().__init__(start, end, False)
+        self.stretch_factor = stretch_factor
+
+        if algorithm not in ["wsola"]:
+            raise ValueError("Invalid algorithm")
+
+        self.algorithm = algorithm
+
+    def apply(self, cache: Type["Cache"]) -> None:
+        """Applies the edit to the given esig object.
+
+        Parameters
+        ----------
+        cache : Type[&quot;Cache&quot;]
+            The cache to apply the edit to.
+        """
+
+        if self.algorithm == "wsola":
+            # Save the parts before and after the edit
+            before = cache.asig.sig[: self.start]
+            after = cache.asig.sig[self.end :]
+
+            # Apply the length change
+            edit = tsm.wsola(
+                cache.asig.sig[self.start : self.end].T,
+                self.stretch_factor,
+            ).T  # Wsola returns (channels, samples) instead of (samples, channels)
+
+            # Reconstruct the signal
+            cache.asig = Asig(np.concatenate((before, edit, after)), cache.asig.sr)
         else:
             raise ValueError("Invalid algorithm")
