@@ -148,9 +148,6 @@ class Esig:
             Additional arguments to be passed to matplotlib.pyplot.plot()
         """
 
-        # We need the current pitch and events to plot them
-        self.cache.update()
-
         # Create a new axes if none is given
         if axes is None:
             axes = plt.subplot()
@@ -244,21 +241,6 @@ class Cache:
         edit : Type[&quot;Edit&quot;]
             The edit to apply.
         """
-
-        if edit.needs_pitch:
-            # Recalculate the pitch and events
-            (
-                pitch,
-                pitch_sr,
-                events,
-                frame_size,
-                frame_jump,
-            ) = self._recalculate()
-            self.pitch = pitch
-            self.pitch_sr = pitch_sr
-            self.events = events
-            self.frame_size = frame_size
-            self.frame_jump = frame_jump
 
         edit.apply(self)
 
@@ -438,7 +420,7 @@ class Edit(ABC):
     """A non-destructive edit to an esig object."""
 
     @abstractmethod
-    def __init__(self, start: int, end: int, needs_pitch: bool) -> None:
+    def __init__(self, start: int, end: int) -> None:
         """Creates a non-destructive edit object for the given sample range.
 
         Parameters
@@ -447,13 +429,10 @@ class Edit(ABC):
             The starting point of this edit (inclusive), in samples.
         end : int
             The ending point of this edit (exclusive), in samples.
-        needs_pitch : bool
-            Whether this edit needs the pitch to be calculated.
         """
 
         self.start = start
         self.end = end
-        self.needs_pitch = needs_pitch
 
     @abstractmethod
     def apply(self, cache: Type["Cache"]) -> None:
@@ -490,7 +469,7 @@ class PitchChange(Edit):
             The algorithm to change the pitch with.
         """
 
-        super().__init__(start, end, True)
+        super().__init__(start, end)
         self.shift_factor = shift_factor
 
         if algorithm not in ["tdpsola"]:
@@ -530,6 +509,9 @@ class PitchChange(Edit):
         else:
             raise ValueError("Invalid algorithm")
 
+        # Recalculate the pitch and events
+        cache.update()
+
 
 class LengthChange(Edit):
     """Changes the length of a sample range."""
@@ -555,7 +537,7 @@ class LengthChange(Edit):
             The algorithm to change the length with.
         """
 
-        super().__init__(start, end, False)
+        super().__init__(start, end)
         self.stretch_factor = stretch_factor
 
         if algorithm not in ["wsola"]:
@@ -587,3 +569,6 @@ class LengthChange(Edit):
             cache.asig = Asig(np.concatenate((before, edit, after)), cache.asig.sr)
         else:
             raise ValueError("Invalid algorithm")
+
+        # Recalculate the pitch and events
+        cache.update()
