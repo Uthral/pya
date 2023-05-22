@@ -36,16 +36,16 @@ class TestEsig(TestCase):
         esig4 = Esig(self.asig_test_piano, algorithm="yaapt")
 
         # Some pitches should be detected
-        self.assertTrue(len(esig1.pitch) > 0)
-        self.assertTrue(len(esig2.pitch) > 0)
-        self.assertTrue(len(esig3.pitch) > 0)
-        self.assertTrue(len(esig4.pitch) > 0)
+        self.assertTrue(len(esig1.cache.pitch) > 0)
+        self.assertTrue(len(esig2.cache.pitch) > 0)
+        self.assertTrue(len(esig3.cache.pitch) > 0)
+        self.assertTrue(len(esig4.cache.pitch) > 0)
 
-        # Some notes should be detected
-        self.assertTrue(len(esig1.notes) > 0)
-        self.assertTrue(len(esig2.notes) > 0)
-        self.assertTrue(len(esig3.notes) > 0)
-        self.assertTrue(len(esig4.notes) > 0)
+        # Some events should be detected
+        self.assertTrue(len(esig1.cache.events) > 0)
+        self.assertTrue(len(esig2.cache.events) > 0)
+        self.assertTrue(len(esig3.cache.events) > 0)
+        self.assertTrue(len(esig4.cache.events) > 0)
 
     def test_esig_plot_pitch(self):
         """Testing the plot_pitch method."""
@@ -54,3 +54,24 @@ class TestEsig(TestCase):
         self.esig_test_legato.plot_pitch()
         self.esig_test_voice.plot_pitch()
         self.esig_test_piano.plot_pitch()
+
+    def test_esig_events(self):
+        """Testing events when applying edits."""
+
+        events_staccato = self.esig_test_staccato.cache.events
+        self.esig_test_staccato.change_length(0, 5, 1.5)
+        self.assertTrue(
+            len(self.esig_test_staccato.cache.events) == len(events_staccato)
+        )
+
+        events_legato = self.esig_test_legato.cache.events
+        self.esig_test_legato.change_length(0, 5, 1.5)
+        self.assertTrue(len(self.esig_test_legato.cache.events) == len(events_legato))
+
+        events_voice = self.esig_test_voice.cache.events
+        self.esig_test_voice.change_length(0, 5, 1.5)
+        self.assertTrue(len(self.esig_test_voice.cache.events) == len(events_voice))
+
+        events_piano = self.esig_test_piano.cache.events
+        self.esig_test_piano.change_length(0, 5, 1.5)
+        self.assertTrue(len(self.esig_test_piano.cache.events) == len(events_piano))

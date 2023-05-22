@@ -222,15 +222,16 @@ class Cache:
         (
             pitch,
             pitch_sr,
-            events,
             frame_size,
             frame_jump,
-        ) = self._recalculate()  # Calculate the pitch and events
+        ) = self._recalculate()  # Calculate the pitch
         self.pitch = pitch  # The current version of the pitch
         self.pitch_sr = pitch_sr  # The sample rate of the pitch
-        self.events = events  # The current version of the events
         self.frame_size = frame_size  # The current frame size
         self.frame_jump = frame_jump  # The current frame jump
+
+        # Calculate events
+        self.events = self._guess_events(self.pitch, self.pitch_sr)
 
     def apply(self, edit: Type["Edit"]) -> None:
         """Applies the given edit to the cache.
@@ -257,28 +258,27 @@ class Cache:
             self.apply(edit)
 
     def update(self) -> None:
-        """Recalculates the pitch and events of the current signal in the cache."""
+        """Recalculates the pitch of the current signal in the cache."""
 
+        # TODO Only recalculate the edited part of the signal
         (
             pitch,
             pitch_sr,
-            events,
             frame_size,
             frame_jump,
         ) = self._recalculate()
         self.pitch = pitch
         self.pitch_sr = pitch_sr
-        self.events = events
         self.frame_size = frame_size
         self.frame_jump = frame_jump
 
-    def _recalculate(self) -> tuple[np.ndarray, float, list, int, int]:
-        """Recalculate the pitch and events of the current signal in the cache.
+    def _recalculate(self) -> tuple[np.ndarray, float, int, int]:
+        """Recalculate the pitch of the current signal in the cache.
 
         Returns
         -------
-        tuple[np.ndarray, float, list, int, int]
-            The pitch, pitch sample rate, events, frame size, and frame jump.
+        tuple[np.ndarray, float, int, int]
+            The pitch, pitch sample rate, frame size, and frame jump.
 
         Raises
         ------
@@ -296,11 +296,7 @@ class Cache:
         else:
             raise ValueError("Invalid algorithm")
 
-        # Guess the events from the pitch
-        # TODO Use events detected from original pitch
-        events = self._guess_events(pitch, pitch_sr)
-
-        return pitch, pitch_sr, events, frame_size, frame_jump
+        return pitch, pitch_sr, frame_size, frame_jump
 
     def _guess_pitch_yaapt(self, asig: Type["Asig"]) -> tuple[np.ndarray, int, int]:
         """Guesses the pitch of an audio signal.
@@ -324,7 +320,28 @@ class Cache:
             signal, frame_length=30, tda_frame_length=40, f0_min=60, f0_max=600
         )
 
-        return pitch_guess.samp_values, pitch_guess.frame_size, pitch_guess.frame_jump
+        # We have to interpolate the pitch where the algorithm didn't guess it (i.e. 0)
+        values = pitch_guess.samp_values
+        for i, value in enumerate(values):
+            if value == 0:
+                # Find next non-zero value
+                next_value = 0
+                for j in range(i + 1, len(values)):
+                    if values[j] != 0:
+                        next_value = values[j]
+                        break
+
+                # Find last non-zero value
+                last_value = 0
+                for j in range(i - 1, -1, -1):
+                    if values[j] != 0:
+                        last_value = values[j]
+                        break
+
+                # Interpolate the value
+                values[i] = round((next_value + last_value) / 2, 2)
+
+        return values, pitch_guess.frame_size, pitch_guess.frame_jump
 
     def _guess_events(self, pitch: np.ndarray, pitch_sr: float) -> list:
         """Guesses the events from the pitch.
@@ -567,6 +584,41 @@ class LengthChange(Edit):
 
             # Reconstruct the signal
             cache.asig = Asig(np.concatenate((before, edit, after)), cache.asig.sr)
+
+            # Update events to match the new length
+            for event in cache.events:
+                # If event start is after or during the edit, move it
+                if event.start >= self.start:
+                    # Find percentage of event in the edit
+                    event_percentage = (event.start - self.start) / (
+                        self.end - self.start
+                    )
+
+                    # Limit percentage to 1 (when event is at the end of the edit or after)
+                    event_percentage = min(1, event_percentage)
+
+                    # Find change in length of the edit
+                    edit_length_change = len(edit) - (self.end - self.start)
+
+                    # Move the event by the change in length
+                    event.start += int(event_percentage * edit_length_change)
+
+                # If event end is after or during the edit, move it
+                if event.end >= self.start:
+                    # Find percentage of event in the edit
+                    event_percentage = (event.end - self.start) / (
+                        self.end - self.start
+                    )
+
+                    # Limit percentage to 1 (when event is at the end of the edit or after)
+                    event_percentage = min(1, event_percentage)
+
+                    # Find change in length of the edit
+                    edit_length_change = len(edit) - (self.end - self.start)
+
+                    # Move the event by the change in length
+                    event.end += int(event_percentage * edit_length_change)
+
         else:
             raise ValueError("Invalid algorithm")
 
