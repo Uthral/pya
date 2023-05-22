@@ -1,6 +1,7 @@
 """Testing of the esig module."""
 from unittest import TestCase
 import os
+import numpy as np
 from pya import Asig, Esig
 
 TESTFILE_STACCATO__PATH = os.path.join(
@@ -55,8 +56,8 @@ class TestEsig(TestCase):
         self.esig_test_voice.plot_pitch()
         self.esig_test_piano.plot_pitch()
 
-    def test_esig_events(self):
-        """Testing events when applying edits."""
+    def test_esig_length_change(self):
+        """Testing length change."""
 
         events_staccato = self.esig_test_staccato.cache.events
         self.esig_test_staccato.change_length(0, 5, 1.5)
@@ -75,3 +76,31 @@ class TestEsig(TestCase):
         events_piano = self.esig_test_piano.cache.events
         self.esig_test_piano.change_length(0, 5, 1.5)
         self.assertTrue(len(self.esig_test_piano.cache.events) == len(events_piano))
+
+    def test_esig_pitch_change(self):
+        """Tests changing pitch of an esig."""
+
+        pitch_before_staccato = np.copy(self.esig_test_staccato.cache.pitch)
+        pitch_before_legato = np.copy(self.esig_test_legato.cache.pitch)
+        pitch_before_voice = np.copy(self.esig_test_voice.cache.pitch)
+        pitch_before_piano = np.copy(self.esig_test_piano.cache.pitch)
+
+        self.esig_test_staccato.change_pitch(0, 5, 1.5)
+        self.esig_test_legato.change_pitch(0, 5, 1.5)
+        self.esig_test_voice.change_pitch(0, 5, 1.5)
+        self.esig_test_piano.change_pitch(0, 5, 1.5)
+
+        self.assertTrue(
+            not np.array_equal(
+                pitch_before_staccato, self.esig_test_staccato.cache.pitch
+            )
+        )
+        self.assertTrue(
+            not np.array_equal(pitch_before_legato, self.esig_test_legato.cache.pitch)
+        )
+        self.assertTrue(
+            not np.array_equal(pitch_before_voice, self.esig_test_voice.cache.pitch)
+        )
+        self.assertTrue(
+            not np.array_equal(pitch_before_piano, self.esig_test_piano.cache.pitch)
+        )
