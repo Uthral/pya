@@ -224,7 +224,9 @@ class Cache:
             pitch_sr,
             frame_size,
             frame_jump,
-        ) = self._recalculate()  # Calculate the pitch
+        ) = self._recalculate(
+            0, len(self.asig.sig)
+        )  # Calculate the pitch
         self.pitch = pitch  # The current version of the pitch
         self.pitch_sr = pitch_sr  # The sample rate of the pitch
         self.frame_size = frame_size  # The current frame size
@@ -253,27 +255,78 @@ class Cache:
         # Copy the original asig from esig
         self.asig = Asig(np.copy(self.esig.asig.sig), self.esig.asig.sr)
 
+        # Recalculate pitch and events
+        (
+            self.pitch,
+            self.pitch_sr,
+            self.frame_size,
+            self.frame_jump,
+        ) = self._recalculate(0, len(self.asig.sig))
+        self.events = self._guess_events(self.pitch, self.pitch_sr)
+
         # Apply all edits
         for edit in self.esig.edits:
             self.apply(edit)
 
-    def update(self) -> None:
-        """Recalculates the pitch of the current signal in the cache."""
+    def update(self, start: int, end: int) -> None:
+        """Recalculates the pitch of the cache for the given sample range (in signal samples)
 
-        # TODO Only recalculate the edited part of the signal
+        Parameters
+        ----------
+        start : int
+            The starting point of the range to recalculate (inclusive), in samples.
+        end : int
+            The ending point of the range to recalculate (exclusive), in samples.
+        """
+
+        window_length = 10  # ms
+        window_length_samples = int(window_length * self.asig.sr / 1000)
+
+        # Add a window of samples before and after the range to recalculate
+        start_window = max(0, start - window_length_samples)
+        end_window = min(len(self.asig.sig), end + window_length_samples)
+
         (
             pitch,
             pitch_sr,
             frame_size,
             frame_jump,
-        ) = self._recalculate()
-        self.pitch = pitch
+        ) = self._recalculate(
+            start_window, end_window
+        )  # Recalculate the pitch
+
+        # We need to convert the window to pitch samples
+        start_window_pitch = int(start_window * (self.pitch_sr / self.asig.sr))
+        end_window_pitch = int(end_window * (self.pitch_sr / self.asig.sr))
+
+        # The offset between the window points and the range points
+        start_window_offset = int(
+            (start_window - start) * (self.pitch_sr / self.asig.sr)
+        )
+        end_window_offset = int((end_window - start) * (self.pitch_sr / self.asig.sr))
+
+        self.pitch = np.concatenate(
+            (
+                self.pitch[:start_window_pitch],
+                pitch[
+                    start_window_offset:end_window_offset
+                ],  # Edited pitch without the window
+                self.pitch[end_window_pitch:],
+            )
+        )  # Replace the edited part of the pitch
         self.pitch_sr = pitch_sr
         self.frame_size = frame_size
         self.frame_jump = frame_jump
 
-    def _recalculate(self) -> tuple[np.ndarray, float, int, int]:
-        """Recalculate the pitch of the current signal in the cache.
+    def _recalculate(self, start: int, end: int) -> tuple[np.ndarray, float, int, int]:
+        """Recalculate the pitch of the current signal in the cache for the given sample range.
+
+        Parameters
+        ----------
+        start : int
+            The starting point of the range to recalculate (inclusive), in samples.
+        end : int
+            The ending point of the range to recalculate (exclusive), in samples.
 
         Returns
         -------
@@ -288,9 +341,13 @@ class Cache:
 
         # Guess the pitch of the audio signal
         if self.esig.algorithm == "yaapt":
-            pitch, frame_size, frame_jump = self._guess_pitch_yaapt(self.asig)
+            edited_part = self.asig.sig[start:end]
+
+            pitch, frame_size, frame_jump = self._guess_pitch_yaapt(
+                edited_part, self.asig.sr
+            )
             length = (
-                len(self.asig.sig) / self.asig.sr
+                len(edited_part) / self.asig.sr
             )  # Length of the audio signal (in seconds)
             pitch_sr = len(pitch) / length  # Pitch sampling rate
         else:
@@ -298,13 +355,17 @@ class Cache:
 
         return pitch, pitch_sr, frame_size, frame_jump
 
-    def _guess_pitch_yaapt(self, asig: Type["Asig"]) -> tuple[np.ndarray, int, int]:
+    def _guess_pitch_yaapt(
+        self, sig: np.ndarray, sample_rate: int
+    ) -> tuple[np.ndarray, int, int]:
         """Guesses the pitch of an audio signal.
 
         Parameters
         ----------
-        asig : Type[&quot;Asig&quot;]
-            The signal to guess the pitch of.
+        sig : np.ndarray
+            The audio signal.
+        sample_rate : int
+            The sample rate of the audio signal.
 
         Returns
         -------
@@ -313,7 +374,7 @@ class Cache:
         """
 
         # Create a SignalObj
-        signal = basic_tools.SignalObj(asig.sig, asig.sr)
+        signal = basic_tools.SignalObj(sig, sample_rate)
 
         # Apply YAAPT
         pitch_guess = pYAAPT.yaapt(
@@ -527,7 +588,7 @@ class PitchChange(Edit):
             raise ValueError("Invalid algorithm")
 
         # Recalculate the pitch and events
-        cache.update()
+        cache.update(self.start, self.end)
 
 
 class LengthChange(Edit):
@@ -587,6 +648,9 @@ class LengthChange(Edit):
 
             # Update events to match the new length
             for event in cache.events:
+                # TODO Events are not updated correctly
+                # TODO Check if pitch change events are equal to before and after#
+
                 # If event start is after or during the edit, move it
                 if event.start >= self.start:
                     # Find percentage of event in the edit
@@ -622,5 +686,17 @@ class LengthChange(Edit):
         else:
             raise ValueError("Invalid algorithm")
 
-        # Recalculate the pitch and events
-        cache.update()
+        # Insert empty pitch samples for the edit
+        start_pitch = int(self.start * (cache.pitch_sr / cache.asig.sr))
+        end_pitch = int(self.end * (cache.pitch_sr / cache.asig.sr))
+        pitch_before = cache.pitch[:start_pitch]
+        pitch_after = cache.pitch[end_pitch:]
+        edit_length_pitch = int(len(edit) * (cache.pitch_sr / cache.asig.sr))
+        cache.pitch = np.concatenate(
+            (pitch_before, [0] * edit_length_pitch, pitch_after)
+        )
+
+        # Recalculate the pitch
+        edit_start = self.start
+        edit_end = self.start + len(edit)
+        cache.update(edit_start, edit_end)

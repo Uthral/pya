@@ -104,3 +104,33 @@ class TestEsig(TestCase):
         self.assertTrue(
             not np.array_equal(pitch_before_piano, self.esig_test_piano.cache.pitch)
         )
+
+    def test_esig_undo(self):
+        """Tests the undo function."""
+
+        self.esig_test_staccato.change_pitch(0, 5, 1.5)
+        self.esig_test_legato.change_pitch(0, 5, 1.5)
+        self.esig_test_voice.change_pitch(0, 5, 1.5)
+        self.esig_test_piano.change_pitch(0, 5, 1.5)
+
+        sig_staccato = np.copy(self.esig_test_staccato.cache.pitch)
+        sig_legato = np.copy(self.esig_test_legato.cache.pitch)
+        sig_voice = np.copy(self.esig_test_voice.cache.pitch)
+        sig_piano = np.copy(self.esig_test_piano.cache.pitch)
+
+        self.esig_test_staccato.undo_last()
+        self.esig_test_legato.undo_last()
+        self.esig_test_voice.undo_last()
+        self.esig_test_piano.undo_last()
+
+        self.esig_test_staccato.change_pitch(0, 5, 1.5)
+        self.esig_test_legato.change_pitch(0, 5, 1.5)
+        self.esig_test_voice.change_pitch(0, 5, 1.5)
+        self.esig_test_piano.change_pitch(0, 5, 1.5)
+
+        self.assertTrue(
+            np.array_equal(sig_staccato, self.esig_test_staccato.cache.pitch)
+        )
+        self.assertTrue(np.array_equal(sig_legato, self.esig_test_legato.cache.pitch))
+        self.assertTrue(np.array_equal(sig_voice, self.esig_test_voice.cache.pitch))
+        self.assertTrue(np.array_equal(sig_piano, self.esig_test_piano.cache.pitch))
