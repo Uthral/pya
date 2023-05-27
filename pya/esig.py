@@ -279,44 +279,36 @@ class Cache:
             The ending point of the range to recalculate (exclusive), in samples.
         """
 
-        window_length = 10  # ms
-        window_length_samples = int(window_length * self.asig.sr / 1000)
-
-        # Add a window of samples before and after the range to recalculate
-        start_window = max(0, start - window_length_samples)
-        end_window = min(len(self.asig.sig), end + window_length_samples)
-
         (
-            pitch,
-            pitch_sr,
-            frame_size,
-            frame_jump,
+            edited_pitch,
+            _,
+            _,
+            _,
         ) = self._recalculate(
-            start_window, end_window
+            start, end
         )  # Recalculate the pitch
 
-        # We need to convert the window to pitch samples
-        start_window_pitch = int(start_window * (self.pitch_sr / self.asig.sr))
-        end_window_pitch = int(end_window * (self.pitch_sr / self.asig.sr))
+        # We need to convert the ranges to pitch samples
+        start_pitch = int(start * (self.pitch_sr / self.asig.sr))
+        end_pitch = int(end * (self.pitch_sr / self.asig.sr))
 
-        # The offset between the window points and the range points
-        start_window_offset = int(
-            (start_window - start) * (self.pitch_sr / self.asig.sr)
+        # The length of the edited pitch might differ slightly from the original part,
+        # therefore we need to interpolate the edited pitch to match the length of the original part.
+        target_length = end_pitch - start_pitch
+        edited_pitch = np.interp(
+            np.linspace(0, len(edited_pitch), target_length),
+            np.arange(len(edited_pitch)),
+            edited_pitch,
         )
-        end_window_offset = int((end_window - start) * (self.pitch_sr / self.asig.sr))
 
+        # Replace the edited part of the pitch
         self.pitch = np.concatenate(
             (
-                self.pitch[:start_window_pitch],
-                pitch[
-                    start_window_offset:end_window_offset
-                ],  # Edited pitch without the window
-                self.pitch[end_window_pitch:],
+                self.pitch[:start_pitch],
+                edited_pitch,
+                self.pitch[end_pitch:],
             )
-        )  # Replace the edited part of the pitch
-        self.pitch_sr = pitch_sr
-        self.frame_size = frame_size
-        self.frame_jump = frame_jump
+        )
 
     def _recalculate(self, start: int, end: int) -> tuple[np.ndarray, float, int, int]:
         """Recalculate the pitch of the current signal in the cache for the given sample range.
@@ -648,9 +640,6 @@ class LengthChange(Edit):
 
             # Update events to match the new length
             for event in cache.events:
-                # TODO Events are not updated correctly
-                # TODO Check if pitch change events are equal to before and after#
-
                 # If event start is after or during the edit, move it
                 if event.start >= self.start:
                     # Find percentage of event in the edit

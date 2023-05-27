@@ -85,11 +85,17 @@ class TestEsig(TestCase):
         pitch_before_voice = np.copy(self.esig_test_voice.cache.pitch)
         pitch_before_piano = np.copy(self.esig_test_piano.cache.pitch)
 
+        events_before_staccato = np.copy(self.esig_test_staccato.cache.events)
+        events_before_legato = np.copy(self.esig_test_legato.cache.events)
+        events_before_voice = np.copy(self.esig_test_voice.cache.events)
+        events_before_piano = np.copy(self.esig_test_piano.cache.events)
+
         self.esig_test_staccato.change_pitch(0, 5, 1.5)
         self.esig_test_legato.change_pitch(0, 5, 1.5)
         self.esig_test_voice.change_pitch(0, 5, 1.5)
         self.esig_test_piano.change_pitch(0, 5, 1.5)
 
+        # The pitches should change
         self.assertTrue(
             not np.array_equal(
                 pitch_before_staccato, self.esig_test_staccato.cache.pitch
@@ -103,6 +109,20 @@ class TestEsig(TestCase):
         )
         self.assertTrue(
             not np.array_equal(pitch_before_piano, self.esig_test_piano.cache.pitch)
+        )
+
+        # The events should not change
+        self.assertTrue(
+            np.array_equal(events_before_staccato, self.esig_test_staccato.cache.events)
+        )
+        self.assertTrue(
+            np.array_equal(events_before_legato, self.esig_test_legato.cache.events)
+        )
+        self.assertTrue(
+            np.array_equal(events_before_voice, self.esig_test_voice.cache.events)
+        )
+        self.assertTrue(
+            np.array_equal(events_before_piano, self.esig_test_piano.cache.events)
         )
 
     def test_esig_undo(self):
