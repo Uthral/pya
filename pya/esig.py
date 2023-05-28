@@ -522,7 +522,7 @@ class PitchChange(Edit):
         self,
         start: int,
         end: int,
-        shift_factor: float,
+        change: float,
         algorithm: str,
     ) -> None:
         """Creates a non-destructive pitch change for the given sample range.
@@ -533,14 +533,14 @@ class PitchChange(Edit):
             The starting point of this edit (inclusive), in samples.
         end : int
             The ending point of this edit (exclusive), in samples.
-        shift_factor : float
-            The factor to shift the pitch by. 1.0 is no change.
+        change : float
+            The amount of semitones to change the pitch by. 0.0 is no change.
         algorithm : str
             The algorithm to change the pitch with.
         """
 
         super().__init__(start, end)
-        self.shift_factor = shift_factor
+        self.change = change
 
         if algorithm not in ["tdpsola"]:
             raise ValueError("Invalid algorithm")
@@ -565,7 +565,13 @@ class PitchChange(Edit):
             # Calculate the new pitch contour,
             # i.e. the pitch contour shifted by the shift factor for the given range
             changed_pitch = np.copy(cache.pitch)
-            changed_pitch[start:end] *= self.shift_factor
+            for i in range(start, end):
+                # Get current pitch and adapt by the change factor
+                current_pitch = changed_pitch[i]
+                current_pitch = librosa.hz_to_midi(current_pitch)
+                current_pitch += self.change
+                current_pitch = librosa.midi_to_hz(current_pitch)
+                changed_pitch[i] = current_pitch
 
             # Apply the pitch change
             cache.asig.sig = tsm.tdpsola(
