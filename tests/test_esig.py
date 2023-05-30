@@ -202,3 +202,11 @@ class TestEsig(TestCase):
         self.assertTrue(np.array_equal(sig_legato, self.esig_test_legato.cache.pitch))
         self.assertTrue(np.array_equal(sig_voice, self.esig_test_voice.cache.pitch))
         self.assertTrue(np.array_equal(sig_piano, self.esig_test_piano.cache.pitch))
+
+    def test_print_events(self):
+        """Tests the print_events method."""
+
+        self.esig_test_staccato.print_events()
+        self.esig_test_legato.print_events()
+        self.esig_test_voice.print_events()
+        self.esig_test_piano.print_events()
