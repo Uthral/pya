@@ -74,7 +74,7 @@ class Esig:
         self,
         start: float,
         end: float,
-        shift_factor: float,
+        semitones: float,
         algorithm: str = "tdpsola",
     ) -> None:
         """Changes the pitch of the given sample range by the given amount.
@@ -85,9 +85,9 @@ class Esig:
             The starting second to change (inclusive)
         end : float
             The ending second to change (exclusive)
-        shift_factor : float
-            The factor to change the pitch with.
-            1.0 means no change.
+        semitones : float
+            The amount of semitones to change the pitch with.
+            0.0 means no change.
         algorithm : str, optional
             The algorithm to change the pitch with, by default "tdpsola".
             Currently, only "tdpsola" is supported.
@@ -97,8 +97,34 @@ class Esig:
         start = int(start * self.asig.sr)
         end = int(end * self.asig.sr)
 
-        self.edits.append(PitchChange(start, end, shift_factor, algorithm))
+        self.edits.append(PitchChange(start, end, semitones, algorithm))
         self.cache.apply(self.edits[-1])  # Apply the edit to the cache
+
+    def change_event_pitch(
+        self, event_index: int, semitones: float, algorithm: str = "tdpsola"
+    ) -> None:
+        """Changes the pitch of the given event by the given amount.
+
+        Parameters
+        ----------
+        event_index : int
+            The index of the event to change. (Can be found with print_events())
+        semitones : float
+            The amount of semitones to change the pitch with.
+            0.0 means no change.
+        algorithm : str, optional
+            The algorithm to change the pitch with, by default "tdpsola".
+            Currently, only "tdpsola" is supported.
+        """
+
+        # Get the event
+        event = self.cache.events[event_index]
+
+        # Convert samples to seconds
+        start = event.start / self.asig.sr
+        end = event.end / self.asig.sr
+
+        self.change_pitch(start, end, semitones, algorithm)
 
     def change_length(
         self, start: float, end: float, stretch_factor: float, algorithm: str = "wsola"
@@ -126,12 +152,38 @@ class Esig:
         self.edits.append(LengthChange(start, end, stretch_factor, algorithm))
         self.cache.apply(self.edits[-1])  # Apply the edit to the cache
 
+    def change_event_length(
+        self, event_index: int, stretch_factor: float, algorithm: str = "wsola"
+    ) -> None:
+        """Changes the length of the given event by the given amount.
+
+        Parameters
+        ----------
+        event_index : int
+            The index of the event to change. (Can be found with print_events())
+        stretch_factor : float
+            The factor to change the length with.
+            1.0 means no change.
+        algorithm : str, optional
+            The algorithm to change the length with, by default "wsola".
+            Currently, only "wsola" is supported.
+        """
+
+        # Get the event
+        event = self.cache.events[event_index]
+
+        # Convert samples to seconds
+        start = event.start / self.asig.sr
+        end = event.end / self.asig.sr
+
+        self.change_length(start, end, stretch_factor, algorithm)
+
     def plot_pitch(
         self,
         axes: plt.Axes = None,
         include_events: bool = True,
         xlabel: str = "Time (s)",
-        **kwargs
+        **kwargs,
     ) -> None:
         """Plots the guessed pitch. This won't call plt.show(), allowing plot customization.
 
@@ -183,6 +235,25 @@ class Esig:
 
             # Add legend
             axes.legend(["Detected pitch", "Average pitch of event"])
+
+    def print_events(self) -> None:
+        """Prints the guessed events."""
+
+        for event in self.cache.events:
+            start_seconds = event.start / self.asig.sr
+            end_seconds = event.end / self.asig.sr
+            event_index = self.cache.events.index(event)
+            avg_pitch = np.mean(
+                self.cache.pitch[
+                    int(start_seconds * self.cache.pitch_sr) : int(
+                        end_seconds * self.cache.pitch_sr
+                    )
+                ]
+            )
+
+            print(
+                f"Event {event_index}: {start_seconds:.2f}s - {end_seconds:.2f}s ({end_seconds - start_seconds:.2f}s) - {avg_pitch:.2f}Hz"
+            )
 
 
 class Event:
