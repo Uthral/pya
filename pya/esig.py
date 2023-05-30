@@ -8,6 +8,8 @@ meaning that the original audio signal is not modified and changes can be undone
 
 from typing import Type
 from abc import ABC, abstractmethod
+import json
+import binascii
 from amfm_decompy import basic_tools, pYAAPT
 import numpy as np
 import matplotlib.pyplot as plt
@@ -26,7 +28,7 @@ class Esig:
 
     def __init__(
         self,
-        asig: Asig,
+        obj_input: any,
         algorithm: str = "yaapt",
         max_vibrato_extent: float = 40,
         max_vibrato_inaccuracy: float = 0.5,
@@ -36,8 +38,8 @@ class Esig:
 
         Parameters
         ----------
-        asig : Asig
-            The signal to be edited.
+        obj_input : any
+            Either the json string of an Esig object, or an Asig object.
         algorithm : str
             The algorithm to be used to guess the pitch of the audio signal.
             Possible values are: 'yaapt'
@@ -55,14 +57,67 @@ class Esig:
             Events shorter than this will be filtered out.
         """
 
-        self.asig = asig
-        self.algorithm = algorithm
-        self.max_vibrato_extent = max_vibrato_extent
-        self.max_vibrato_inaccuracy = max_vibrato_inaccuracy
-        self.min_event_length = min_event_length
-        self.edits = []
+        if isinstance(obj_input, str):
+            json_dict = json.loads(obj_input)
 
-        self.cache = Cache(self)  # Initialize the cache, storing the results of edits
+            # Load the signal from the json dict
+            signal = np.frombuffer(
+                binascii.a2b_base64(json_dict["signal_base64"]), dtype=np.float32
+            )
+            num_channels = json_dict["num_channels"]
+            if num_channels != 1:
+                signal = signal.reshape(
+                    (
+                        int(len(signal) / num_channels),
+                        num_channels,
+                    )
+                )  # The loaded array is flattened, we need to reshape it
+            sample_rate = json_dict["sample_rate"]
+            self.asig = Asig(signal, sample_rate)
+            self.algorithm = json_dict["algorithm"]
+            self.max_vibrato_extent = json_dict["max_vibrato_extent"]
+            self.max_vibrato_inaccuracy = json_dict["max_vibrato_inaccuracy"]
+            self.min_event_length = json_dict["min_event_length"]
+
+            # Load the edits from the json dict
+            self.edits = []
+            for edit_json in json_dict["edits"]:
+                if edit_json["type"] == "pitch_change":
+                    self.edits.append(
+                        PitchChange(
+                            edit_json["start"],
+                            edit_json["end"],
+                            edit_json["change"],
+                            edit_json["algorithm"],
+                        )
+                    )
+                elif edit_json["type"] == "length_change":
+                    self.edits.append(
+                        LengthChange(
+                            edit_json["start"],
+                            edit_json["end"],
+                            edit_json["stretch_factor"],
+                            edit_json["algorithm"],
+                        )
+                    )
+                else:
+                    raise ValueError("Invalid edit type")
+
+            self.cache = Cache(self)
+            self.cache.reapply()  # Apply all edits to the cache
+        elif isinstance(obj_input, Asig):
+            self.asig = obj_input
+            self.algorithm = algorithm
+            self.max_vibrato_extent = max_vibrato_extent
+            self.max_vibrato_inaccuracy = max_vibrato_inaccuracy
+            self.min_event_length = min_event_length
+            self.edits = []
+
+            self.cache = Cache(
+                self
+            )  # Initialize the cache, storing the results of edits
+        else:
+            raise ValueError("Invalid input")
 
     def undo_last(self) -> None:
         """Undos the last edit on this signal."""
@@ -252,8 +307,36 @@ class Esig:
             )
 
             print(
-                f"Event {event_index}: {start_seconds:.2f}s - {end_seconds:.2f}s ({end_seconds - start_seconds:.2f}s) - {avg_pitch:.2f}Hz"
+                f"Event {event_index}: {start_seconds:.2f}s - {end_seconds:.2f}s "
+                f"({end_seconds - start_seconds:.2f}s) - {avg_pitch:.2f}Hz"
             )
+
+    def to_json(self) -> str:
+        """Converts the esig to a json string.
+
+        Returns
+        -------
+        str
+            The json string.
+        """
+
+        # Convert the signal of asig to a binary string
+        signal = self.asig.sig.tobytes()
+        signal_base64 = binascii.b2a_base64(signal).decode("utf-8")
+        sample_rate = self.asig.sr
+
+        return json.dumps(
+            {
+                "signal_base64": signal_base64,
+                "num_channels": self.asig.channels,
+                "sample_rate": sample_rate,
+                "algorithm": self.algorithm,
+                "max_vibrato_extent": self.max_vibrato_extent,
+                "max_vibrato_inaccuracy": self.max_vibrato_inaccuracy,
+                "min_event_length": self.min_event_length,
+                "edits": [edit.to_json() for edit in self.edits],
+            }
+        )
 
 
 class Event:
@@ -364,7 +447,7 @@ class Cache:
         end_pitch = int(end * (self.pitch_sr / self.asig.sr))
 
         # The length of the edited pitch might differ slightly from the original part,
-        # therefore we need to interpolate the edited pitch to match the length of the original part.
+        # therefore we interpolate the edited pitch to match the length of the original part.
         target_length = end_pitch - start_pitch
         edited_pitch = np.interp(
             np.linspace(0, len(edited_pitch), target_length),
@@ -585,6 +668,16 @@ class Edit(ABC):
             The cache to apply the edit to.
         """
 
+    @abstractmethod
+    def to_json(self) -> dict:
+        """Converts the edit to a json dict.
+
+        Returns
+        -------
+        dict
+            The json dict.
+        """
+
 
 class PitchChange(Edit):
     """Changes the pitch of a sample range."""
@@ -658,6 +751,23 @@ class PitchChange(Edit):
 
         # Recalculate the pitch and events
         cache.update(self.start, self.end)
+
+    def to_json(self) -> dict:
+        """Converts the edit to a json dict.
+
+        Returns
+        -------
+        dict
+            The json dict.
+        """
+
+        return {
+            "type": "pitch_change",
+            "start": self.start,
+            "end": self.end,
+            "change": self.change,
+            "algorithm": self.algorithm,
+        }
 
 
 class LengthChange(Edit):
@@ -766,3 +876,20 @@ class LengthChange(Edit):
         edit_start = self.start
         edit_end = self.start + len(edit)
         cache.update(edit_start, edit_end)
+
+    def to_json(self) -> dict:
+        """Converts the edit to a json dict.
+
+        Returns
+        -------
+        dict
+            The json dict.
+        """
+
+        return {
+            "type": "length_change",
+            "start": self.start,
+            "end": self.end,
+            "stretch_factor": self.stretch_factor,
+            "algorithm": self.algorithm,
+        }

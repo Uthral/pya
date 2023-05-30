@@ -210,3 +210,31 @@ class TestEsig(TestCase):
         self.esig_test_legato.print_events()
         self.esig_test_voice.print_events()
         self.esig_test_piano.print_events()
+
+    def test_serialization(self):
+        """Tests the to_json method and from_json constructor."""
+
+        json_str_staccato = self.esig_test_staccato.to_json()
+        json_str_legato = self.esig_test_legato.to_json()
+        json_str_voice = self.esig_test_voice.to_json()
+        json_str_piano = self.esig_test_piano.to_json()
+
+        esig_staccato = Esig(json_str_staccato)
+        esig_legato = Esig(json_str_legato)
+        esig_voice = Esig(json_str_voice)
+        esig_piano = Esig(json_str_piano)
+
+        self.assertTrue(
+            np.array_equal(
+                self.esig_test_staccato.cache.pitch, esig_staccato.cache.pitch
+            )
+        )
+        self.assertTrue(
+            np.array_equal(self.esig_test_legato.cache.pitch, esig_legato.cache.pitch)
+        )
+        self.assertTrue(
+            np.array_equal(self.esig_test_voice.cache.pitch, esig_voice.cache.pitch)
+        )
+        self.assertTrue(
+            np.array_equal(self.esig_test_piano.cache.pitch, esig_piano.cache.pitch)
+        )
