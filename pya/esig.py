@@ -263,7 +263,9 @@ class Esig:
         time = np.linspace(
             0, len(self.cache.pitch) / self.cache.pitch_sr, len(self.cache.pitch)
         )
-        axes.plot(time, self.cache.pitch, **kwargs)
+        plot_values = np.copy(self.cache.pitch)
+        plot_values[plot_values == 0] = np.nan  # Replace 0 with nan to not plot it
+        axes.plot(time, plot_values, **kwargs)
 
         # Label the axes
         axes.set_xlabel(xlabel)
@@ -527,28 +529,7 @@ class Cache:
             signal, frame_length=30, tda_frame_length=40, f0_min=60, f0_max=600
         )
 
-        # We have to interpolate the pitch where the algorithm didn't guess it (i.e. 0)
-        values = pitch_guess.samp_values
-        for i, value in enumerate(values):
-            if value == 0:
-                # Find next non-zero value
-                next_value = 0
-                for j in range(i + 1, len(values)):
-                    if values[j] != 0:
-                        next_value = values[j]
-                        break
-
-                # Find last non-zero value
-                last_value = 0
-                for j in range(i - 1, -1, -1):
-                    if values[j] != 0:
-                        last_value = values[j]
-                        break
-
-                # Interpolate the value
-                values[i] = round((next_value + last_value) / 2, 2)
-
-        return values, pitch_guess.frame_size, pitch_guess.frame_jump
+        return pitch_guess.samp_values, pitch_guess.frame_size, pitch_guess.frame_jump
 
     def _guess_events(self, pitch: np.ndarray, pitch_sr: float) -> list:
         """Guesses the events from the pitch.
