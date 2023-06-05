@@ -309,12 +309,18 @@ class Esig:
         )
         plot_values = np.copy(self.cache.pitch)
         plot_values[plot_values == 0] = np.nan  # Replace 0 with nan to not plot it
+        plot_values = librosa.hz_to_midi(plot_values)  # We want to plot midi values
         axes.plot(time, plot_values, **kwargs)
 
         # Label the axes
         axes.set_xlabel(xlabel)
-        axes.set_ylabel("Frequency (Hz)")
-        # TODO y axis in midi scale with 1-midi grid lines (maybe use cpsmidi)
+        axes.set_ylabel("Pitch (MIDI)")
+
+        # Add a grid for midi semitones in y-axis
+        min_pitch = int(np.nanmin(plot_values)) - 1
+        max_pitch = int(np.nanmax(plot_values)) + 1
+        axes.set_yticks(np.arange(min_pitch, max_pitch + 1, 1))
+        axes.grid(True, axis="y")
 
         # Plot the events with average pitch as line
         if include_events:
@@ -324,6 +330,7 @@ class Esig:
                 end = event.end / self.asig.sr
 
                 avg_pitch = self._avg_pitch(event)
+                avg_pitch = librosa.hz_to_midi(avg_pitch)
                 axes.plot(
                     [
                         start,
