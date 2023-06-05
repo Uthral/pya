@@ -233,6 +233,50 @@ class Esig:
 
         self.change_length(start, end, stretch_factor, algorithm)
 
+    def _avg_pitch(self, event: Type["Event"]) -> float:
+        """Calculates the average pitch of an event on the current pitch in cache.
+        Uses interpolation for better accuracy when converting from signal samples to pitch samples.
+
+        Parameters
+        ----------
+        event : Type[&quot;Event&quot;]
+            The event to calculate the pitch of
+
+        Returns
+        -------
+        float
+            The average pitch of the event in Hz
+        """
+
+        # Interpolate pitch 0 values for avg pitch
+        time = np.linspace(
+            0, len(self.cache.pitch) / self.cache.pitch_sr, len(self.cache.pitch)
+        )
+        pitch_values_interp = np.copy(self.cache.pitch)
+        pitch_values_interp[pitch_values_interp == 0] = np.nan
+        pitch_values_interp = np.interp(
+            time,
+            time[
+                ~np.isnan(pitch_values_interp)
+            ],  # Don't include nan values in interpolation
+            pitch_values_interp[
+                ~np.isnan(pitch_values_interp)
+            ],  # Don't include nan values in interpolation
+        )
+
+        # Convert signal samples to seconds and pitch samples
+        start = event.start / self.asig.sr
+        end = event.end / self.asig.sr
+
+        # Interpolate the pitch
+        pitch_values = np.interp(
+            np.linspace(start, end, int((end - start) * self.cache.pitch_sr)),
+            time,
+            pitch_values_interp,
+        )
+
+        return np.mean(pitch_values)
+
     def plot_pitch(
         self,
         axes: plt.Axes = None,
@@ -269,18 +313,17 @@ class Esig:
 
         # Label the axes
         axes.set_xlabel(xlabel)
-        axes.set_ylabel("Pitch (Hz)")
+        axes.set_ylabel("Frequency (Hz)")
+        # TODO y axis in midi scale with 1-midi grid lines (maybe use cpsmidi)
 
         # Plot the events with average pitch as line
         if include_events:
             for event in self.cache.events:
-                # Convert signal samples to pitch samples and seconds
+                # Convert signal samples to seconds and pitch samples
                 start = event.start / self.asig.sr
                 end = event.end / self.asig.sr
-                start_sample = int(start * self.cache.pitch_sr)
-                end_sample = int(end * self.cache.pitch_sr)
 
-                avg_pitch = np.mean(self.cache.pitch[start_sample:end_sample])
+                avg_pitch = self._avg_pitch(event)
                 axes.plot(
                     [
                         start,
@@ -300,13 +343,7 @@ class Esig:
             start_seconds = event.start / self.asig.sr
             end_seconds = event.end / self.asig.sr
             event_index = self.cache.events.index(event)
-            avg_pitch = np.mean(
-                self.cache.pitch[
-                    int(start_seconds * self.cache.pitch_sr) : int(
-                        end_seconds * self.cache.pitch_sr
-                    )
-                ]
-            )
+            avg_pitch = self._avg_pitch(event)
 
             print(
                 f"Event {event_index}: {start_seconds:.2f}s - {end_seconds:.2f}s "
