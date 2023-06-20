@@ -100,6 +100,16 @@ class Esig:
                             edit_json["algorithm"],
                         )
                     )
+                elif edit_json["type"] == "event_modification":
+                    self.edits.append(
+                        EventModification(
+                            edit_json["start"],
+                            edit_json["end"],
+                            edit_json["new_start"],
+                            edit_json["new_end"],
+                            edit_json["offset"],
+                        )
+                    )
                 else:
                     raise ValueError("Invalid edit type")
 
@@ -232,6 +242,52 @@ class Esig:
         end = event.end / self.asig.sr
 
         self.change_length(start, end, stretch_factor, algorithm)
+
+    def modify_event(
+        self,
+        event_index: int,
+        new_start: float | None,
+        new_end: float | None,
+        offset: float | None,
+    ) -> None:
+        """Manually modifies an auto detected event.
+
+        Parameters
+        ----------
+        event_index : int
+            The index of the event to change. (Can be found with print_events())
+        new_start : float | None
+            The new starting second of the event.
+            None means no change.
+        new_end : float | None
+            The new ending second of the event.
+            None means no change.
+        offset : float | None
+            The offset to apply to the event, after the new boundaries are applied.
+            0 or None means no offset.
+        """
+
+        # Get the event
+        event = self.cache.events[event_index]
+
+        # Convert seconds to samples
+        if new_start is not None:
+            new_start = int(new_start * self.asig.sr)
+        else:
+            new_start = event.start
+        if new_end is not None:
+            new_end = int(new_end * self.asig.sr)
+        else:
+            new_end = event.end
+        if offset is not None:
+            offset = int(offset * self.asig.sr)
+        else:
+            offset = 0
+
+        self.edits.append(
+            EventModification(event.start, event.end, new_start, new_end, offset)
+        )
+        self.cache.apply(self.edits[-1])  # Apply the edit to the cache
 
     def _avg_pitch(self, event: Type["Event"]) -> float:
         """Calculates the average pitch of an event on the current pitch in cache.
@@ -917,4 +973,90 @@ class LengthChange(Edit):
             "end": self.end,
             "stretch_factor": self.stretch_factor,
             "algorithm": self.algorithm,
+        }
+
+
+class EventModification(Edit):
+    """An edit to manually modify an event.
+    Possible modifications are:
+    - Change the boundaries of the event (e.g. to make it longer)
+    - Change the position of the event (e.g. to move it 20ms forward)
+    """
+
+    def __init__(
+        self,
+        start: int,
+        end: int,
+        new_start: int,
+        new_end: int,
+        offset: int,
+    ) -> None:
+        """Creates an event modification edit.
+        The new boundaries of the event are applied first, then the offset is applied.
+        The event to be modified is the one that matches the start and end of this edit exactly.
+
+        Parameters
+        ----------
+        start : int
+            The starting point of this edit (inclusive), in samples.
+        end : int
+            The ending point of this edit (exclusive), in samples.
+        new_start : int
+            The new starting point of the event (inclusive), in samples.
+        new_end : int
+            The new ending point of the event (exclusive), in samples.
+        offset : int
+            The offset to move the event by, in samples.
+        """
+
+        super().__init__(start, end)
+        self.new_start = new_start
+        self.new_end = new_end
+        self.offset = offset
+
+    def apply(self, cache: Type["Cache"]) -> None:
+        """Applies the edit to the given esig object.
+
+        Parameters
+        ----------
+        cache : Type[&quot;Cache&quot;]
+            The cache to apply the edit to.
+        """
+
+        # Find the event to modify
+        event = None
+        for cache_event in cache.events:
+            if cache_event.start == self.start and cache_event.end == self.end:
+                event = cache_event
+                break
+
+        # When no event is found, raise an error
+        if event is None:
+            raise ValueError("No event found to modify")
+
+        # Modify the event
+        event.start = self.new_start
+        event.end = self.new_end
+        event.start += self.offset
+        event.end += self.offset
+
+        # Update the cache
+        cache.update(self.start, self.end)
+
+    def to_json(self) -> dict:
+        """Converts the edit to a json dict.
+
+        Returns
+        -------
+        dict
+            The json dict.
+        """
+
+        return {
+            "type": "event_modification",
+            "start": self.start,
+            "end": self.end,
+            "new_start": self.new_start,
+            "new_end": self.new_end,
+            "offset": self.offset,
         }

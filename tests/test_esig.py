@@ -173,6 +173,109 @@ class TestEsig(TestCase):
             np.array_equal(events_before_piano, self.esig_test_piano.cache.events)
         )
 
+    def test_esig_modify_event(self):
+        """Tests the event modification function."""
+
+        events_before_staccato = []
+        events_before_legato = []
+        events_before_voice = []
+        events_before_piano = []
+
+        # Copy the events
+        for event in self.esig_test_staccato.cache.events:
+            events_before_staccato.append(
+                (
+                    event.start,
+                    event.end,
+                )
+            )
+        for event in self.esig_test_legato.cache.events:
+            events_before_legato.append(
+                (
+                    event.start,
+                    event.end,
+                )
+            )
+        for event in self.esig_test_voice.cache.events:
+            events_before_voice.append(
+                (
+                    event.start,
+                    event.end,
+                )
+            )
+        for event in self.esig_test_piano.cache.events:
+            events_before_piano.append(
+                (
+                    event.start,
+                    event.end,
+                )
+            )
+
+        self.esig_test_staccato.modify_event(0, None, None, 2)
+        self.esig_test_legato.modify_event(0, None, None, 2)
+        self.esig_test_voice.modify_event(0, None, None, 2)
+        self.esig_test_piano.modify_event(0, None, None, 2)
+
+        event_1_start_seconds = (
+            self.esig_test_staccato.cache.events[0].start
+            / self.esig_test_staccato.cache.asig.sr
+        )
+        event_1_end_seconds = (
+            self.esig_test_staccato.cache.events[0].end
+            / self.esig_test_staccato.cache.asig.sr
+        )
+
+        self.esig_test_staccato.modify_event(
+            1, event_1_start_seconds + 0.1, event_1_end_seconds + 0.2, None
+        )
+        self.esig_test_legato.modify_event(
+            1, event_1_start_seconds + 0.1, event_1_end_seconds + 0.2, None
+        )
+        self.esig_test_voice.modify_event(
+            1, event_1_start_seconds + 0.1, event_1_end_seconds + 0.2, None
+        )
+        self.esig_test_piano.modify_event(
+            1, event_1_start_seconds + 0.1, event_1_end_seconds + 0.2, None
+        )
+
+        # The events should change
+        self.assertTrue(
+            not np.array_equal(
+                events_before_staccato,
+                [
+                    (event.start, event.end)
+                    for event in self.esig_test_staccato.cache.events
+                ],
+            )
+        )
+        self.assertTrue(
+            not np.array_equal(
+                events_before_legato,
+                [
+                    (event.start, event.end)
+                    for event in self.esig_test_legato.cache.events
+                ],
+            )
+        )
+        self.assertTrue(
+            not np.array_equal(
+                events_before_voice,
+                [
+                    (event.start, event.end)
+                    for event in self.esig_test_voice.cache.events
+                ],
+            )
+        )
+        self.assertTrue(
+            not np.array_equal(
+                events_before_piano,
+                [
+                    (event.start, event.end)
+                    for event in self.esig_test_piano.cache.events
+                ],
+            )
+        )
+
     def test_esig_undo(self):
         """Tests the undo function."""
 
