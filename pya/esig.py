@@ -5,7 +5,6 @@ The editing is non-destructive,
 meaning that the original audio signal is not modified and changes can be undone.
 """
 
-
 from typing import Type
 from abc import ABC, abstractmethod
 import json
@@ -14,8 +13,8 @@ from amfm_decompy import basic_tools, pYAAPT
 import numpy as np
 import matplotlib.pyplot as plt
 import librosa
-import scipy.ndimage
 import pytsmod as tsm
+import scipy.ndimage
 from pya.asig import Asig
 
 
@@ -108,6 +107,20 @@ class Esig:
                             edit_json["new_start"],
                             edit_json["new_end"],
                             edit_json["offset"],
+                        )
+                    )
+                elif edit_json["type"] == "event_creation":
+                    self.edits.append(
+                        EventCreation(
+                            edit_json["start"],
+                            edit_json["end"],
+                        )
+                    )
+                elif edit_json["type"] == "event_deletion":
+                    self.edits.append(
+                        EventDeletion(
+                            edit_json["start"],
+                            edit_json["end"],
                         )
                     )
                 else:
@@ -287,6 +300,41 @@ class Esig:
         self.edits.append(
             EventModification(event.start, event.end, new_start, new_end, offset)
         )
+        self.cache.apply(self.edits[-1])  # Apply the edit to the cache
+
+    def create_event(self, start: float, end: float) -> None:
+        """Creates an event with the given time range.
+
+        Parameters
+        ----------
+        start : float
+            The starting second of the event.
+        end : float
+            The ending second of the event.
+        """
+
+        # Convert seconds to samples
+        start = int(start * self.asig.sr)
+        end = int(end * self.asig.sr)
+
+        self.edits.append(EventCreation(start, end))
+        self.cache.apply(self.edits[-1])  # Apply the edit to the cache
+
+    def delete_event(self, event_index: int) -> None:
+        """Deletes the given event.
+        If multiple events exist in the given range of the selected event,
+        all of them will be deleted.
+
+        Parameters
+        ----------
+        event_index : int
+            The index of the event to delete. (Can be found with print_events())
+        """
+
+        # Get the event
+        event = self.cache.events[event_index]
+
+        self.edits.append(EventDeletion(event.start, event.end))
         self.cache.apply(self.edits[-1])  # Apply the edit to the cache
 
     def _avg_pitch(self, event: Type["Event"]) -> float:
@@ -724,7 +772,6 @@ class Cache:
 class Edit(ABC):
     """A non-destructive edit to an esig object."""
 
-    @abstractmethod
     def __init__(self, start: int, end: int) -> None:
         """Creates a non-destructive edit object for the given sample range.
 
@@ -1059,4 +1106,80 @@ class EventModification(Edit):
             "new_start": self.new_start,
             "new_end": self.new_end,
             "offset": self.offset,
+        }
+
+
+class EventCreation(Edit):
+    """An edit to manually create an event."""
+
+    def apply(self, cache: Type["Cache"]) -> None:
+        """Applies the edit to the given esig object.
+
+        Parameters
+        ----------
+        cache : Type[&quot;Cache&quot;]
+            The cache to apply the edit to.
+        """
+
+        # Create the event
+        event = Event(self.start, self.end)
+
+        # Add the event to the cache.
+        # We don't need to update the cache because the event itself
+        # makes no changes to the audio signal
+        cache.events.append(event)
+
+    def to_json(self) -> dict:
+        """Converts the edit to a json dict.
+
+        Returns
+        -------
+        dict
+            The json dict.
+        """
+
+        return {
+            "type": "event_creation",
+            "start": self.start,
+            "end": self.end,
+        }
+
+
+class EventDeletion(Edit):
+    """Deletes all events that match the start and end of this edit exactly."""
+
+    def apply(self, cache: Type["Cache"]) -> None:
+        """Applies the edit to the given esig object.
+
+        Parameters
+        ----------
+        cache : Type[&quot;Cache&quot;]
+            The cache to apply the edit to.
+        """
+
+        # Find the events to delete
+        events_to_delete = []
+        for cache_event in cache.events:
+            if cache_event.start == self.start and cache_event.end == self.end:
+                events_to_delete.append(cache_event)
+
+        # Delete the events.
+        # We don't need to update the cache because the events themselves
+        # make no changes to the audio signal.
+        for event in events_to_delete:
+            cache.events.remove(event)
+
+    def to_json(self) -> dict:
+        """Converts the edit to a json dict.
+
+        Returns
+        -------
+        dict
+            The json dict.
+        """
+
+        return {
+            "type": "event_deletion",
+            "start": self.start,
+            "end": self.end,
         }

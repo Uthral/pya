@@ -276,6 +276,54 @@ class TestEsig(TestCase):
             )
         )
 
+    def test_esig_create_event(self):
+        """Tests the event creation function
+        by creating new events and looking at the cache event list.
+        """
+
+        staccato_event_count = len(self.esig_test_staccato.cache.events)
+        legato_event_count = len(self.esig_test_legato.cache.events)
+        voice_event_count = len(self.esig_test_voice.cache.events)
+        piano_event_count = len(self.esig_test_piano.cache.events)
+
+        self.esig_test_staccato.create_event(0.1, 1.1)
+        self.esig_test_legato.create_event(0.1, 1.1)
+        self.esig_test_voice.create_event(0.1, 1.1)
+        self.esig_test_piano.create_event(0.1, 1.1)
+
+        self.assertTrue(
+            len(self.esig_test_staccato.cache.events) == staccato_event_count + 1
+        )
+        self.assertTrue(
+            len(self.esig_test_legato.cache.events) == legato_event_count + 1
+        )
+        self.assertTrue(len(self.esig_test_voice.cache.events) == voice_event_count + 1)
+        self.assertTrue(len(self.esig_test_piano.cache.events) == piano_event_count + 1)
+
+    def test_esig_delete_event(self):
+        """Tests the event deletion function
+        by deleting events and looking at the cache event list.
+        """
+
+        staccato_event_count = len(self.esig_test_staccato.cache.events)
+        legato_event_count = len(self.esig_test_legato.cache.events)
+        voice_event_count = len(self.esig_test_voice.cache.events)
+        piano_event_count = len(self.esig_test_piano.cache.events)
+
+        self.esig_test_staccato.delete_event(0)
+        self.esig_test_legato.delete_event(0)
+        self.esig_test_voice.delete_event(0)
+        self.esig_test_piano.delete_event(0)
+
+        self.assertTrue(
+            len(self.esig_test_staccato.cache.events) == staccato_event_count - 1
+        )
+        self.assertTrue(
+            len(self.esig_test_legato.cache.events) == legato_event_count - 1
+        )
+        self.assertTrue(len(self.esig_test_voice.cache.events) == voice_event_count - 1)
+        self.assertTrue(len(self.esig_test_piano.cache.events) == piano_event_count - 1)
+
     def test_esig_undo(self):
         """Tests the undo function."""
 
