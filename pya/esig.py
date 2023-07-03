@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import librosa
 import pytsmod as tsm
 import scipy.ndimage
+import scipy.io.wavfile
 from pya.asig import Asig
 
 
@@ -488,6 +489,43 @@ class Esig:
             }
         )
 
+    def export(self, path: str, time_from: float | None, time_to: float | None) -> None:
+        """Exports the esig to a wav file.
+
+        Parameters
+        ----------
+        path : str
+            The path to export the wav file to.
+        time_from : float, optional
+            The time to start exporting from, in seconds, by default None.
+            If None, the export will start from the beginning.
+        time_to : float, optional
+            The time to stop exporting at, in seconds, by default None.
+            If None, the export will stop at the end.
+        """
+
+        # Convert the signal of asig in cache to a binary string
+        signal = self.cache.asig.sig
+        sample_rate = self.cache.asig.sr
+
+        # Convert time to samples
+        if time_from is None:
+            time_from = 0
+        if time_to is None:
+            time_to = len(signal) / sample_rate
+        time_from = int(time_from * sample_rate)
+        time_to = int(time_to * sample_rate)
+
+        # Clip the signal
+        signal = signal[time_from:time_to]
+
+        # Create the wav file
+        scipy.io.wavfile.write(
+            path,
+            sample_rate,
+            signal,
+        )
+
 
 class Event:
     """A event is a range of samples with a guessed pitch."""
@@ -583,6 +621,17 @@ class Cache:
             The ending point of the range to recalculate (exclusive), in samples.
         """
 
+        # Make sure the range is at least 500ms long
+        min_samples = int(self.asig.sr * 0.5)
+        if end - start < min_samples:
+            end = min(
+                start + min_samples, len(self.asig.sig)
+            )  # Make sure we don't go out of bounds
+            if end - start < min_samples:
+                start = max(
+                    end - min_samples, 0
+                )  # If we still don't have enough samples, we go to the other side
+
         (
             edited_pitch,
             _,
@@ -670,7 +719,8 @@ class Cache:
         """
 
         # Create a SignalObj
-        signal = basic_tools.SignalObj(sig, sample_rate)
+        mono = librosa.to_mono(sig.T)
+        signal = basic_tools.SignalObj(mono, sample_rate)
 
         # Apply YAAPT
         pitch_guess = pYAAPT.yaapt(
