@@ -1445,23 +1445,15 @@ class PitchCurveEdit(Edit):
             start = int(self.start * factor)
             end = int(self.end * factor)
 
-            # Calculate the new pitch contour,
-            # i.e. the pitch contour shifted by the semitone difference for the given range
+            # Calculate the new pitch contour
             changed_pitch = np.copy(cache.pitch)
-            for i in range(start, end):
-                # Get current pitch and adapt by the change factor
-                current_time = (i - start) / (end - start)
-                pitch_delta = np.interp(
-                    current_time,
-                    self.pitch_delta[:, 0],
-                    self.pitch_delta[:, 1],
-                )
-
-                # To convert semitones to Hz, we need to know the current pitch,
-                # because the frequency difference between two semitones depends on the pitch.
-                pitch = changed_pitch[i]
-                pitch = librosa.hz_to_midi(pitch)
-                changed_pitch[i] = librosa.midi_to_hz(pitch + pitch_delta)
+            pitch_delta = np.interp(
+                np.linspace(0, 1, end - start),
+                self.pitch_delta[:, 0],
+                self.pitch_delta[:, 1],
+            )
+            pitch = librosa.hz_to_midi(changed_pitch[start:end])
+            changed_pitch[start:end] = librosa.midi_to_hz(pitch + pitch_delta)
 
             # Apply the pitch change
             cache.asig.sig = tsm.tdpsola(
