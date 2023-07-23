@@ -173,6 +173,202 @@ class TestEsig(TestCase):
             np.array_equal(events_before_piano, self.esig_test_piano.cache.events)
         )
 
+    def test_esig_change_pitch_curve(self):
+        """Tests the change_pitch_curve method."""
+
+        pitch_curve = np.array([(0, 0), (0.25, 1), (0.5, 0), (0.75, -1), (1, 0)])
+
+        pitch_before_staccato = np.copy(self.esig_test_staccato.cache.pitch)
+        pitch_before_legato = np.copy(self.esig_test_legato.cache.pitch)
+        pitch_before_voice = np.copy(self.esig_test_voice.cache.pitch)
+        pitch_before_piano = np.copy(self.esig_test_piano.cache.pitch)
+
+        events_before_staccato = np.copy(self.esig_test_staccato.cache.events)
+        events_before_legato = np.copy(self.esig_test_legato.cache.events)
+        events_before_voice = np.copy(self.esig_test_voice.cache.events)
+        events_before_piano = np.copy(self.esig_test_piano.cache.events)
+
+        self.esig_test_staccato.change_pitch_curve(0, 5, pitch_curve)
+        self.esig_test_legato.change_pitch_curve(0, 5, pitch_curve)
+        self.esig_test_voice.change_pitch_curve(0, 5, pitch_curve)
+        self.esig_test_piano.change_pitch_curve(0, 5, pitch_curve)
+
+        # The pitches should change
+        self.assertTrue(
+            not np.array_equal(
+                pitch_before_staccato, self.esig_test_staccato.cache.pitch
+            )
+        )
+        self.assertTrue(
+            not np.array_equal(pitch_before_legato, self.esig_test_legato.cache.pitch)
+        )
+        self.assertTrue(
+            not np.array_equal(pitch_before_voice, self.esig_test_voice.cache.pitch)
+        )
+        self.assertTrue(
+            not np.array_equal(pitch_before_piano, self.esig_test_piano.cache.pitch)
+        )
+
+        # The events should not change
+        self.assertTrue(
+            np.array_equal(events_before_staccato, self.esig_test_staccato.cache.events)
+        )
+        self.assertTrue(
+            np.array_equal(events_before_legato, self.esig_test_legato.cache.events)
+        )
+        self.assertTrue(
+            np.array_equal(events_before_voice, self.esig_test_voice.cache.events)
+        )
+        self.assertTrue(
+            np.array_equal(events_before_piano, self.esig_test_piano.cache.events)
+        )
+
+    def test_esig_change_event_pitch_curve(self):
+        """Tests the change_event_pitch_curve method."""
+
+        pitch_curve = np.array([(0, 0), (0.25, 1), (0.5, 0), (0.75, -1), (1, 0)])
+
+        pitch_before_staccato = np.copy(self.esig_test_staccato.cache.pitch)
+        pitch_before_legato = np.copy(self.esig_test_legato.cache.pitch)
+        pitch_before_voice = np.copy(self.esig_test_voice.cache.pitch)
+        pitch_before_piano = np.copy(self.esig_test_piano.cache.pitch)
+
+        events_before_staccato = np.copy(self.esig_test_staccato.cache.events)
+        events_before_legato = np.copy(self.esig_test_legato.cache.events)
+        events_before_voice = np.copy(self.esig_test_voice.cache.events)
+        events_before_piano = np.copy(self.esig_test_piano.cache.events)
+
+        self.esig_test_staccato.change_event_pitch_curve(0, pitch_curve)
+        self.esig_test_legato.change_event_pitch_curve(0, pitch_curve)
+        self.esig_test_voice.change_event_pitch_curve(0, pitch_curve)
+        self.esig_test_piano.change_event_pitch_curve(0, pitch_curve)
+
+        # The pitches should change
+        self.assertTrue(
+            not np.array_equal(
+                pitch_before_staccato, self.esig_test_staccato.cache.pitch
+            )
+        )
+        self.assertTrue(
+            not np.array_equal(pitch_before_legato, self.esig_test_legato.cache.pitch)
+        )
+        self.assertTrue(
+            not np.array_equal(pitch_before_voice, self.esig_test_voice.cache.pitch)
+        )
+        self.assertTrue(
+            not np.array_equal(pitch_before_piano, self.esig_test_piano.cache.pitch)
+        )
+
+        # The events should not change
+        self.assertTrue(
+            np.array_equal(events_before_staccato, self.esig_test_staccato.cache.events)
+        )
+        self.assertTrue(
+            np.array_equal(events_before_legato, self.esig_test_legato.cache.events)
+        )
+        self.assertTrue(
+            np.array_equal(events_before_voice, self.esig_test_voice.cache.events)
+        )
+        self.assertTrue(
+            np.array_equal(events_before_piano, self.esig_test_piano.cache.events)
+        )
+
+    def test_esig_correct_pitch(self):
+        pitch_curve = np.array([(0, 65), (1, 67)])
+
+        pitch_before_staccato = np.copy(self.esig_test_staccato.cache.pitch)
+        pitch_before_legato = np.copy(self.esig_test_legato.cache.pitch)
+        pitch_before_voice = np.copy(self.esig_test_voice.cache.pitch)
+        pitch_before_piano = np.copy(self.esig_test_piano.cache.pitch)
+
+        events_before_staccato = np.copy(self.esig_test_staccato.cache.events)
+        events_before_legato = np.copy(self.esig_test_legato.cache.events)
+        events_before_voice = np.copy(self.esig_test_voice.cache.events)
+        events_before_piano = np.copy(self.esig_test_piano.cache.events)
+
+        self.esig_test_staccato.correct_pitch(0, 5, pitch_curve)
+        self.esig_test_legato.correct_pitch(0, 5, pitch_curve)
+        self.esig_test_voice.correct_pitch(0, 5, pitch_curve)
+        self.esig_test_piano.correct_pitch(0, 5, pitch_curve)
+
+        # The pitches should change
+        self.assertTrue(
+            not np.array_equal(
+                pitch_before_staccato, self.esig_test_staccato.cache.pitch
+            )
+        )
+        self.assertTrue(
+            not np.array_equal(pitch_before_legato, self.esig_test_legato.cache.pitch)
+        )
+        self.assertTrue(
+            not np.array_equal(pitch_before_voice, self.esig_test_voice.cache.pitch)
+        )
+        self.assertTrue(
+            not np.array_equal(pitch_before_piano, self.esig_test_piano.cache.pitch)
+        )
+
+        # The events should not change
+        self.assertTrue(
+            np.array_equal(events_before_staccato, self.esig_test_staccato.cache.events)
+        )
+        self.assertTrue(
+            np.array_equal(events_before_legato, self.esig_test_legato.cache.events)
+        )
+        self.assertTrue(
+            np.array_equal(events_before_voice, self.esig_test_voice.cache.events)
+        )
+        self.assertTrue(
+            np.array_equal(events_before_piano, self.esig_test_piano.cache.events)
+        )
+
+    def test_esig_correct_event_pitch(self):
+        pitch_curve = np.array([(0, 65), (1, 67)])
+
+        pitch_before_staccato = np.copy(self.esig_test_staccato.cache.pitch)
+        pitch_before_legato = np.copy(self.esig_test_legato.cache.pitch)
+        pitch_before_voice = np.copy(self.esig_test_voice.cache.pitch)
+        pitch_before_piano = np.copy(self.esig_test_piano.cache.pitch)
+
+        events_before_staccato = np.copy(self.esig_test_staccato.cache.events)
+        events_before_legato = np.copy(self.esig_test_legato.cache.events)
+        events_before_voice = np.copy(self.esig_test_voice.cache.events)
+        events_before_piano = np.copy(self.esig_test_piano.cache.events)
+
+        self.esig_test_staccato.correct_event_pitch(0, pitch_curve)
+        self.esig_test_legato.correct_event_pitch(0, pitch_curve)
+        self.esig_test_voice.correct_event_pitch(0, pitch_curve)
+        self.esig_test_piano.correct_event_pitch(0, pitch_curve)
+
+        # The pitches should change
+        self.assertTrue(
+            not np.array_equal(
+                pitch_before_staccato, self.esig_test_staccato.cache.pitch
+            )
+        )
+        self.assertTrue(
+            not np.array_equal(pitch_before_legato, self.esig_test_legato.cache.pitch)
+        )
+        self.assertTrue(
+            not np.array_equal(pitch_before_voice, self.esig_test_voice.cache.pitch)
+        )
+        self.assertTrue(
+            not np.array_equal(pitch_before_piano, self.esig_test_piano.cache.pitch)
+        )
+
+        # The events should not change
+        self.assertTrue(
+            np.array_equal(events_before_staccato, self.esig_test_staccato.cache.events)
+        )
+        self.assertTrue(
+            np.array_equal(events_before_legato, self.esig_test_legato.cache.events)
+        )
+        self.assertTrue(
+            np.array_equal(events_before_voice, self.esig_test_voice.cache.events)
+        )
+        self.assertTrue(
+            np.array_equal(events_before_piano, self.esig_test_piano.cache.events)
+        )
+
     def test_esig_modify_event(self):
         """Tests the event modification function."""
 
