@@ -19,6 +19,9 @@ import scipy.io.wavfile
 from pya.asig import Asig
 
 
+AVERAGE_VIBRATO_RATE = 5  # Hz
+
+
 class Esig:
     """The main class for editable audio signals.
 
@@ -125,6 +128,25 @@ class Esig:
                         )
                     )
                 elif edit_json["type"] == "pitch_curve_edit":
+                    pitch_delta = np.frombuffer(
+                        binascii.a2b_base64(edit_json["pitch_delta"]),
+                        dtype=np.float32,
+                    )
+                    pitch_delta = pitch_delta.reshape(
+                        (
+                            int(len(pitch_delta) / 2),
+                            2,
+                        )
+                    )
+                    self.edits.append(
+                        PitchCurveEdit(
+                            edit_json["start"],
+                            edit_json["end"],
+                            pitch_delta,
+                            edit_json["algorithm"],
+                        )
+                    )
+                elif edit_json["type"] == "pitch_correction_edit":
                     target_pitch = np.frombuffer(
                         binascii.a2b_base64(edit_json["target_pitch"]),
                         dtype=np.float32,
@@ -136,7 +158,7 @@ class Esig:
                         )
                     )
                     self.edits.append(
-                        PitchCurveEdit(
+                        PitchCorrectionEdit(
                             edit_json["start"],
                             edit_json["end"],
                             target_pitch,
@@ -334,6 +356,66 @@ class Esig:
         end = event.end / self.asig.sr
 
         self.change_pitch_curve(start, end, pitch_curve, algorithm)
+
+    def correct_pitch(
+        self,
+        start: float,
+        end: float,
+        target_pitch: np.ndarray,
+        algorithm: str = "tdpsola",
+    ) -> None:
+        """Corrects the pitch of the given sample range to the given target pitch curve.
+
+        Parameters
+        ----------
+        start : float
+            The starting second to change (inclusive)
+        end : float
+            The ending second to change (exclusive)
+        target_pitch : np.ndarray
+            The target pitch curve, given as a numpy array of tuples (time, pitch).
+            The time starts at 0 (start of the edit) and ends at 1 (end of the edit),
+            given as a fraction of the length of the edit.
+            The pitch is given in semitones as the target pitch on a midi scale.
+        algorithm : str, optional
+            The algorithm to change the pitch with, by default "tdpsola".
+            Currently, only "tdpsola" is supported.
+        """
+
+        # Convert seconds to samples
+        start = int(start * self.asig.sr)
+        end = int(end * self.asig.sr)
+
+        self.edits.append(PitchCorrectionEdit(start, end, target_pitch, algorithm))
+        self.cache.apply(self.edits[-1])
+
+    def correct_event_pitch(
+        self, event_index: int, target_pitch: np.ndarray, algorithm: str = "tdpsola"
+    ) -> None:
+        """Corrects the pitch of the given event to the given target pitch curve.
+
+        Parameters
+        ----------
+        event_index : int
+            The index of the event to change. (Can be found with print_events())
+        target_pitch : np.ndarray
+            The target pitch curve, given as a numpy array of tuples (time, pitch).
+            The time starts at 0 (start of the edit) and ends at 1 (end of the edit),
+            given as a fraction of the length of the edit.
+            The pitch is given in semitones as the target pitch on a midi scale.
+        algorithm : str, optional
+            The algorithm to change the pitch with, by default "tdpsola".
+            Currently, only "tdpsola" is supported.
+        """
+
+        # Get the event
+        event = self.cache.events[event_index]
+
+        # Convert samples to seconds
+        start = event.start / self.asig.sr
+        end = event.end / self.asig.sr
+
+        self.correct_pitch(start, end, target_pitch, algorithm)
 
     def modify_event(
         self,
@@ -842,8 +924,8 @@ class Cache:
                 # Get the pitches in the current event.
                 pitches = pitch[start:end]
                 new_pitches = np.append(pitches, current_pitch)
-                average_vibrato_rate = 5  # Hz
-                sigma = pitch_sr / (average_vibrato_rate * 2)
+
+                sigma = pitch_sr / (AVERAGE_VIBRATO_RATE * 2)
                 new_pitches_gaussian = scipy.ndimage.gaussian_filter1d(
                     new_pitches, sigma
                 )
@@ -978,7 +1060,7 @@ class PitchChange(Edit):
 
         if self.algorithm == "tdpsola":
             # The range is in signal samples, we need to convert it to pitch samples
-            factor = len(cache.pitch) / len(cache.asig.sig)
+            factor = cache.pitch_sr / cache.asig.sr
             start = int(self.start * factor)
             end = int(self.end * factor)
 
@@ -1320,7 +1402,7 @@ class PitchCurveEdit(Edit):
         self,
         start: int,
         end: int,
-        target_pitch: np.ndarray,
+        pitch_delta: np.ndarray,
         algorithm: str,
     ) -> None:
         """Creates a non-destructive pitch change for the given sample range.
@@ -1332,7 +1414,7 @@ class PitchCurveEdit(Edit):
         end : int
             The ending point of this edit (exclusive), in samples.
         target_pitch : np.ndarray
-            The target pitch curve, given as a numpy array of tuples (time, pitch).
+            The delta pitch curve, given as a numpy array of tuples (time, pitch).
             The time starts at 0 (start of the edit) and ends at 1 (end of the edit),
             given as a fraction of the length of the edit.
             The pitch is given in semitones as the difference to the original pitch.
@@ -1341,7 +1423,7 @@ class PitchCurveEdit(Edit):
         """
 
         super().__init__(start, end)
-        self.target_pitch = target_pitch
+        self.pitch_delta = pitch_delta
 
         if algorithm not in ["tdpsola"]:
             raise ValueError("Invalid algorithm")
@@ -1359,7 +1441,7 @@ class PitchCurveEdit(Edit):
 
         if self.algorithm == "tdpsola":
             # The range is in signal samples, we need to convert it to pitch samples
-            factor = len(cache.pitch) / len(cache.asig.sig)
+            factor = cache.pitch_sr / cache.asig.sr
             start = int(self.start * factor)
             end = int(self.end * factor)
 
@@ -1371,8 +1453,8 @@ class PitchCurveEdit(Edit):
                 current_time = (i - start) / (end - start)
                 pitch_delta = np.interp(
                     current_time,
-                    self.target_pitch[:, 0],
-                    self.target_pitch[:, 1],
+                    self.pitch_delta[:, 0],
+                    self.pitch_delta[:, 1],
                 )
 
                 # To convert semitones to Hz, we need to know the current pitch,
@@ -1409,8 +1491,129 @@ class PitchCurveEdit(Edit):
             "type": "pitch_curve_edit",
             "start": self.start,
             "end": self.end,
-            "target_pitch": binascii.b2a_base64(self.target_pitch.astype(dtype=np.float32).tobytes()).decode(
-                "utf-8"
-            ),
+            "pitch_delta": binascii.b2a_base64(
+                self.pitch_delta.astype(dtype=np.float32).tobytes()
+            ).decode("utf-8"),
+            "algorithm": self.algorithm,
+        }
+
+
+class PitchCorrectionEdit(Edit):
+    """Corrects the pitch of a time range to a target pitch curve."""
+
+    def __init__(
+        self,
+        start: int,
+        end: int,
+        target_pitch: np.ndarray,
+        algorithm: str,
+    ) -> None:
+        """Creates a non-destructive pitch change for the given sample range.
+
+        Parameters
+        ----------
+        start : int
+            The starting point of this edit (inclusive), in samples.
+        end : int
+            The ending point of this edit (exclusive), in samples.
+        target_pitch : np.ndarray
+            The target pitch curve, given as a numpy array of tuples (time, pitch).
+            The time starts at 0 (start of the edit) and ends at 1 (end of the edit),
+            given as a fraction of the length of the edit.
+            The pitch is given in semitones as the target pitch on a midi scale.
+        algorithm : str
+            The algorithm to change the pitch with.
+        """
+
+        super().__init__(start, end)
+        self.target_pitch = target_pitch
+
+        if algorithm not in ["tdpsola"]:
+            raise ValueError("Invalid algorithm")
+
+        self.algorithm = algorithm
+
+    def apply(self, cache: Type["Cache"]) -> None:
+        """ "Applies the edit to the given esig object.
+
+        Parameters
+        ----------
+        cache : Type[&quot;Cache&quot;]
+            The cache to apply the edit to.
+        """
+
+        if self.algorithm == "tdpsola":
+            # The range is in signal samples, we need to convert it to pitch samples
+            factor = cache.pitch_sr / cache.asig.sr
+
+            # cache.pitch_sr / cache.asig.sr
+            start = int(self.start * factor)
+            end = int(self.end * factor)
+
+            target_pitch = np.interp(
+                np.linspace(0, 1, end - start),
+                self.target_pitch[:, 0],
+                self.target_pitch[:, 1],
+            )
+
+            # The target pitch is given in semitones, we need to convert it to Hz
+            target_pitch = librosa.midi_to_hz(target_pitch)
+
+            # The pitch contour is missing the vibrato of the original signal,
+            # so we need to add it back in.
+            # We do this by calculating the difference between the original pitch
+            # and the gaussian-smoothed original pitch, and adding this difference
+            # to the target pitch.
+            sigma = cache.pitch_sr / (AVERAGE_VIBRATO_RATE * 2)
+            original_pitch_gaussian = scipy.ndimage.gaussian_filter1d(
+                cache.pitch, sigma
+            )
+            pitch_delta = original_pitch_gaussian[start:end] - cache.pitch[start:end]
+            target_pitch += pitch_delta
+
+            # With vibrato added back in, values might be negative.
+            # We need to make sure they are positive.
+            target_pitch = np.abs(target_pitch)
+
+            # Concatenate the pitch contour before and after the edit
+            target_pitch = np.concatenate(
+                (
+                    cache.pitch[:start],
+                    target_pitch,
+                    cache.pitch[end:],
+                )
+            )
+
+            # Apply the pitch change
+            cache.asig.sig = tsm.tdpsola(
+                cache.asig.sig.T,
+                cache.asig.sr,
+                src_f0=cache.pitch,
+                tgt_f0=target_pitch,
+                p_hop_size=cache.frame_jump,
+                p_win_size=cache.frame_size,
+            ).T
+        else:
+            raise ValueError("Invalid algorithm")
+
+        # Recalculate the pitch
+        cache.update(self.start, self.end)
+
+    def to_json(self) -> dict:
+        """Converts the edit to a json dict.
+
+        Returns
+        -------
+        dict
+            The json dict.
+        """
+
+        return {
+            "type": "pitch_correction_edit",
+            "start": self.start,
+            "end": self.end,
+            "target_pitch": binascii.b2a_base64(
+                self.target_pitch.astype(dtype=np.float32).tobytes()
+            ).decode("utf-8"),
             "algorithm": self.algorithm,
         }
