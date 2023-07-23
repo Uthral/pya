@@ -1409,7 +1409,7 @@ class PitchCurveEdit(Edit):
             "type": "pitch_curve_edit",
             "start": self.start,
             "end": self.end,
-            "target_pitch": binascii.b2a_base64(self.target_pitch.tobytes()).decode(
+            "target_pitch": binascii.b2a_base64(self.target_pitch.astype(dtype=np.float32).tobytes()).decode(
                 "utf-8"
             ),
             "algorithm": self.algorithm,
