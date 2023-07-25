@@ -16,6 +16,7 @@ import librosa
 import pytsmod as tsm
 import scipy.ndimage
 import scipy.io.wavfile
+import scipy.interpolate
 from pya.asig import Asig
 
 
@@ -143,6 +144,7 @@ class Esig:
                             edit_json["start"],
                             edit_json["end"],
                             pitch_delta,
+                            edit_json["interpolation"],
                             edit_json["algorithm"],
                         )
                     )
@@ -162,6 +164,7 @@ class Esig:
                             edit_json["start"],
                             edit_json["end"],
                             target_pitch,
+                            edit_json["interpolation"],
                             edit_json["algorithm"],
                         )
                     )
@@ -303,6 +306,7 @@ class Esig:
         start: float,
         end: float,
         pitch_curve: np.ndarray,
+        interpolation: str = "barycentric",
         algorithm: str = "tdpsola",
     ) -> None:
         """Changes the pitch of the given sample range by the given pitch curve.
@@ -318,6 +322,9 @@ class Esig:
             The time starts at 0 (start of the edit) and ends at 1 (end of the edit),
             given as a fraction of the length of the edit.
             The pitch is given in semitones as the difference to the original pitch.
+        interpolation : str, optional
+            The interpolation function to use, by default "barycentric".
+            Supported functions are "barycentric", "krogh" and "pchip".
         algorithm : str, optional
             The algorithm to change the pitch with, by default "tdpsola".
             Currently, only "tdpsola" is supported.
@@ -327,11 +334,17 @@ class Esig:
         start = int(start * self.asig.sr)
         end = int(end * self.asig.sr)
 
-        self.edits.append(PitchCurveEdit(start, end, pitch_curve, algorithm))
+        self.edits.append(
+            PitchCurveEdit(start, end, pitch_curve, interpolation, algorithm)
+        )
         self.cache.apply(self.edits[-1])  # Apply the edit to the cache
 
     def change_event_pitch_curve(
-        self, event_index: int, pitch_curve: np.ndarray, algorithm: str = "tdpsola"
+        self,
+        event_index: int,
+        pitch_curve: np.ndarray,
+        interpolation: str = "barycentric",
+        algorithm: str = "tdpsola",
     ) -> None:
         """Changes the pitch of the given event by the given pitch curve.
 
@@ -343,6 +356,10 @@ class Esig:
             The target pitch curve, given as a numpy array of tuples (time, pitch).
             The time starts at 0 (start of the edit) and ends at 1 (end of the edit),
             given as a fraction of the length of the edit.
+            The pitch is given in semitones as the difference to the original pitch.
+        interpolation : str, optional
+            The interpolation function to use, by default "barycentric".
+            Supported functions are "barycentric", "krogh" and "pchip".
         algorithm : str, optional
             The algorithm to change the pitch with, by default "tdpsola".
             Currently, only "tdpsola" is supported.
@@ -355,13 +372,14 @@ class Esig:
         start = event.start / self.asig.sr
         end = event.end / self.asig.sr
 
-        self.change_pitch_curve(start, end, pitch_curve, algorithm)
+        self.change_pitch_curve(start, end, pitch_curve, interpolation, algorithm)
 
     def correct_pitch(
         self,
         start: float,
         end: float,
         target_pitch: np.ndarray,
+        interpolation: str = "barycentric",
         algorithm: str = "tdpsola",
     ) -> None:
         """Corrects the pitch of the given sample range to the given target pitch curve.
@@ -377,6 +395,9 @@ class Esig:
             The time starts at 0 (start of the edit) and ends at 1 (end of the edit),
             given as a fraction of the length of the edit.
             The pitch is given in semitones as the target pitch on a midi scale.
+        interpolation : str, optional
+            The interpolation function to use, by default "barycentric".
+            Supported functions are "barycentric", "krogh" and "pchip".
         algorithm : str, optional
             The algorithm to change the pitch with, by default "tdpsola".
             Currently, only "tdpsola" is supported.
@@ -386,11 +407,17 @@ class Esig:
         start = int(start * self.asig.sr)
         end = int(end * self.asig.sr)
 
-        self.edits.append(PitchCorrectionEdit(start, end, target_pitch, algorithm))
+        self.edits.append(
+            PitchCorrectionEdit(start, end, target_pitch, interpolation, algorithm)
+        )
         self.cache.apply(self.edits[-1])
 
     def correct_event_pitch(
-        self, event_index: int, target_pitch: np.ndarray, algorithm: str = "tdpsola"
+        self,
+        event_index: int,
+        target_pitch: np.ndarray,
+        interpolation: str = "barycentric",
+        algorithm: str = "tdpsola",
     ) -> None:
         """Corrects the pitch of the given event to the given target pitch curve.
 
@@ -403,6 +430,9 @@ class Esig:
             The time starts at 0 (start of the edit) and ends at 1 (end of the edit),
             given as a fraction of the length of the edit.
             The pitch is given in semitones as the target pitch on a midi scale.
+        interpolation : str, optional
+            The interpolation function to use, by default "barycentric".
+            Supported functions are "barycentric", "krogh" and "pchip".
         algorithm : str, optional
             The algorithm to change the pitch with, by default "tdpsola".
             Currently, only "tdpsola" is supported.
@@ -415,7 +445,7 @@ class Esig:
         start = event.start / self.asig.sr
         end = event.end / self.asig.sr
 
-        self.correct_pitch(start, end, target_pitch, algorithm)
+        self.correct_pitch(start, end, target_pitch, interpolation, algorithm)
 
     def modify_event(
         self,
@@ -1403,6 +1433,7 @@ class PitchCurveEdit(Edit):
         start: int,
         end: int,
         pitch_delta: np.ndarray,
+        interpolation: str,
         algorithm: str,
     ) -> None:
         """Creates a non-destructive pitch change for the given sample range.
@@ -1418,6 +1449,9 @@ class PitchCurveEdit(Edit):
             The time starts at 0 (start of the edit) and ends at 1 (end of the edit),
             given as a fraction of the length of the edit.
             The pitch is given in semitones as the difference to the original pitch.
+        interpolation : str
+            The interpolation function to use.
+            Supported functions are "barycentric", "krogh" and "pchip".
         algorithm : str
             The algorithm to change the pitch with.
         """
@@ -1425,9 +1459,12 @@ class PitchCurveEdit(Edit):
         super().__init__(start, end)
         self.pitch_delta = pitch_delta
 
+        if interpolation not in ["barycentric", "krogh", "pchip"]:
+            raise ValueError("Invalid interpolation")
+        self.interpolation = interpolation
+
         if algorithm not in ["tdpsola"]:
             raise ValueError("Invalid algorithm")
-
         self.algorithm = algorithm
 
     def apply(self, cache: Type["Cache"]) -> None:
@@ -1447,11 +1484,20 @@ class PitchCurveEdit(Edit):
 
             # Calculate the new pitch contour
             changed_pitch = np.copy(cache.pitch)
-            pitch_delta = np.interp(
-                np.linspace(0, 1, end - start),
-                self.pitch_delta[:, 0],
-                self.pitch_delta[:, 1],
-            )
+
+            x = np.linspace(0, 1, end - start)
+            xi = self.pitch_delta[:, 0]
+            yi = self.pitch_delta[:, 1]
+
+            if self.interpolation == "barycentric":
+                pitch_delta = scipy.interpolate.barycentric_interpolate(xi, yi, x)
+            elif self.interpolation == "krogh":
+                pitch_delta = scipy.interpolate.krogh_interpolate(xi, yi, x)
+            elif self.interpolation == "pchip":
+                pitch_delta = scipy.interpolate.pchip_interpolate(xi, yi, x)
+            else:
+                raise ValueError("Invalid interpolation")
+
             pitch = librosa.hz_to_midi(changed_pitch[start:end])
             changed_pitch[start:end] = librosa.midi_to_hz(pitch + pitch_delta)
 
@@ -1486,6 +1532,7 @@ class PitchCurveEdit(Edit):
             "pitch_delta": binascii.b2a_base64(
                 self.pitch_delta.astype(dtype=np.float32).tobytes()
             ).decode("utf-8"),
+            "interpolation": self.interpolation,
             "algorithm": self.algorithm,
         }
 
@@ -1498,6 +1545,7 @@ class PitchCorrectionEdit(Edit):
         start: int,
         end: int,
         target_pitch: np.ndarray,
+        interpolation: str,
         algorithm: str,
     ) -> None:
         """Creates a non-destructive pitch change for the given sample range.
@@ -1513,6 +1561,9 @@ class PitchCorrectionEdit(Edit):
             The time starts at 0 (start of the edit) and ends at 1 (end of the edit),
             given as a fraction of the length of the edit.
             The pitch is given in semitones as the target pitch on a midi scale.
+        interpolation : str
+            The interpolation function to use.
+            Supported functions are "barycentric", "krogh" and "pchip".
         algorithm : str
             The algorithm to change the pitch with.
         """
@@ -1520,9 +1571,12 @@ class PitchCorrectionEdit(Edit):
         super().__init__(start, end)
         self.target_pitch = target_pitch
 
+        if interpolation not in ["barycentric", "krogh", "pchip"]:
+            raise ValueError("Invalid interpolation")
+        self.interpolation = interpolation
+
         if algorithm not in ["tdpsola"]:
             raise ValueError("Invalid algorithm")
-
         self.algorithm = algorithm
 
     def apply(self, cache: Type["Cache"]) -> None:
@@ -1542,11 +1596,18 @@ class PitchCorrectionEdit(Edit):
             start = int(self.start * factor)
             end = int(self.end * factor)
 
-            target_pitch = np.interp(
-                np.linspace(0, 1, end - start),
-                self.target_pitch[:, 0],
-                self.target_pitch[:, 1],
-            )
+            x = np.linspace(0, 1, end - start)
+            xi = self.target_pitch[:, 0]
+            yi = self.target_pitch[:, 1]
+
+            if self.interpolation == "barycentric":
+                target_pitch = scipy.interpolate.barycentric_interpolate(xi, yi, x)
+            elif self.interpolation == "krogh":
+                target_pitch = scipy.interpolate.krogh_interpolate(xi, yi, x)
+            elif self.interpolation == "pchip":
+                target_pitch = scipy.interpolate.pchip_interpolate(xi, yi, x)
+            else:
+                raise ValueError("Invalid interpolation")
 
             # The target pitch is given in semitones, we need to convert it to Hz
             target_pitch = librosa.midi_to_hz(target_pitch)
@@ -1607,5 +1668,6 @@ class PitchCorrectionEdit(Edit):
             "target_pitch": binascii.b2a_base64(
                 self.target_pitch.astype(dtype=np.float32).tobytes()
             ).decode("utf-8"),
+            "interpolation": self.interpolation,
             "algorithm": self.algorithm,
         }
