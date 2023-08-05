@@ -576,7 +576,7 @@ class Esig:
         self,
         axes: plt.Axes = None,
         include_events: bool = True,
-        xlabel: str = "Time (s)",
+        xlabel: str = "Time [s]",
         **kwargs,
     ) -> None:
         """Plots the guessed pitch. This won't call plt.show(), allowing plot customization.
@@ -589,7 +589,7 @@ class Esig:
         include_events : bool, optional
             Whether or not to include the guessed events in the plot, by default True
         xlabel : str, optional
-            The label of the x-axis, by default &quot;Time (s)&quot;
+            The label of the x-axis, by default &quot;Time [s]&quot;
         **kwargs
             Additional arguments to be passed to matplotlib.pyplot.plot()
         """
@@ -609,7 +609,7 @@ class Esig:
 
         # Label the axes
         axes.set_xlabel(xlabel)
-        axes.set_ylabel("Pitch (MIDI)")
+        axes.set_ylabel("Pitch [MIDI]")
 
         # Add a grid for midi semitones in y-axis
         min_pitch = int(np.nanmin(plot_values)) - 1
